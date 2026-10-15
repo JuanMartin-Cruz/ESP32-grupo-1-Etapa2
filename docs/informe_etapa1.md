@@ -302,7 +302,7 @@ Las más relevantes (la lista completa, con síntomas, causa y tiempo perdido, e
 
 ## 10. Cómo reproducirlo y contenido de la entrega
 
-Las instrucciones paso a paso están en el [README](../README.md): instalación del core del ESP32 y de las librerías con **versiones exactas**, configuración del Wi-Fi, prueba del sensor con el escáner I2C, subida del firmware y problemas frecuentes.
+Las instrucciones paso a paso están en el [README](../Readme.md): instalación del core del ESP32 y de las librerías con **versiones exactas**, configuración del Wi-Fi, prueba del sensor con el escáner I2C, subida del firmware y problemas frecuentes.
 
 Resumen:
 
@@ -315,7 +315,7 @@ Resumen:
 **Contenido del ZIP**
 
 ```
-README.md                  instalación, uso y problemas frecuentes
+Readme.md                  instalación, uso y problemas frecuentes
 docs/
   informe_etapa1.md/.docx este informe (Markdown y Word)
   codigo.md                guía del código fuente
