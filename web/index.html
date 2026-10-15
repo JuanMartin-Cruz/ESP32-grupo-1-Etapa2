@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Aire IoT · Registrador de calidad de aire</title>
+<link rel="stylesheet" href="uplot.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="rotulo">
+  <div class="marca">
+    <span class="lampara" id="lampara" role="img" aria-label="Sin conexión"></span>
+    <div>
+      <p class="nombre">Aire IoT</p>
+      <p class="subtitulo">Registrador de calidad de aire interior</p>
+    </div>
+  </div>
+  <div class="calibracion" id="calibracion" title="Precisión del IAQ según Bosch BSEC">
+    <span class="medidor" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span id="calibracion-texto">Sin datos</span>
+  </div>
+</header>
+
+<p class="aviso-conexion" id="aviso-conexion" role="status" hidden>
+  Sin conexión con el equipo. Mostrando el último dato recibido; reintentando…
+</p>
+
+<main>
+  <section class="lectura" aria-labelledby="categoria">
+    <div class="cifra">
+      <output id="iaq" class="numero" aria-describedby="categoria">—</output>
+      <span class="unidad">IAQ</span>
+    </div>
+    <h1 id="categoria" class="categoria">Esperando la primera lectura…</h1>
+    <p id="consejo" class="consejo">El equipo envía un dato cada 3 segundos.</p>
+    <p id="nota-calibracion" class="nota" hidden>
+      El IAQ todavía no es confiable: el sensor se está calibrando. Mientras tanto la alarma sonora queda en pausa.
+    </p>
+
+    <div class="escala" aria-hidden="true">
+      <div class="bandas">
+        <i class="b0"></i><i class="b1"></i><i class="b2"></i><i class="b3"></i><i class="b4"></i><i class="b5"></i><i class="b6"></i>
+      </div>
+      <span class="indice" id="indice"></span>
+      <div class="marcas-escala"><span>0</span><span>50</span><span>100</span><span>150</span><span>200</span><span>250</span><span>350</span><span>500</span></div>
+    </div>
+
+    <div class="alarma" id="alarma" data-estado="0">
+      <p><span class="rotulito">Alarma</span> <strong id="alarma-texto">Sin alarma</strong></p>
+      <button type="button" class="boton primario" id="silenciar">Silenciar alarma</button>
+    </div>
+  </section>
+
+  <section class="tambor" aria-labelledby="t-vivo">
+    <div class="encabezado">
+      <h2 id="t-vivo">Últimos 15 minutos</h2>
+      <p class="lectura-cursor" id="cursor-vivo" aria-live="off"></p>
+    </div>
+    <div class="grafico" id="grafico-vivo"></div>
+  </section>
+
+  <section class="magnitudes" aria-labelledby="t-magnitudes">
+    <h2 id="t-magnitudes">Magnitudes</h2>
+    <ul class="canales" id="canales"></ul>
+    <p class="nota-pie">* eCO₂ y bVOC son estimaciones calculadas a partir del sensor de gas del BME680; no es un sensor de CO₂ real.</p>
+  </section>
+
+  <section class="historial" aria-labelledby="t-historial">
+    <div class="encabezado">
+      <h2 id="t-historial">Historial</h2>
+      <div class="segmentado" role="group" aria-label="Rango del historial">
+        <button type="button" data-rango="1h" aria-pressed="true">1 h</button>
+        <button type="button" data-rango="6h" aria-pressed="false">6 h</button>
+        <button type="button" data-rango="24h" aria-pressed="false">24 h</button>
+      </div>
+    </div>
+    <p class="lectura-cursor" id="cursor-hist" aria-live="off"></p>
+    <div class="grafico" id="grafico-hist"></div>
+
+    <div class="eventos">
+      <form id="form-evento" class="fila-form">
+        <label for="evento-nuevo">Marcar un evento</label>
+        <div class="grupo">
+          <input id="evento-nuevo" maxlength="23" placeholder="Ej.: ventana abierta" autocomplete="off" required>
+          <button type="submit" class="boton">Marcar</button>
+        </div>
+        <p class="ayuda">También podés mantener apretado el botón del equipo 1,5 s. Las marcas quedan en el CSV como etiquetas.</p>
+      </form>
+      <ol class="lista-eventos" id="lista-eventos"></ol>
+    </div>
+  </section>
+
+  <section class="control" aria-labelledby="t-control">
+    <h2 id="t-control">Lazo de control</h2>
+    <div class="leds" aria-label="Estado de los LEDs">
+      <span class="led verde" id="led-0"></span><span class="led amarillo" id="led-1"></span><span class="led rojo" id="led-2"></span>
+      <strong id="led-texto">—</strong>
+    </div>
+    <form id="form-config" class="config">
+      <label>Umbral amarillo <span class="ayuda">IAQ mayor a</span><input type="number" name="umbral_amarillo" min="1" max="499" step="1" required></label>
+      <label>Umbral rojo <span class="ayuda">IAQ mayor a</span><input type="number" name="umbral_rojo" min="2" max="500" step="1" required></label>
+      <label>Histéresis <span class="ayuda">puntos bajo el umbral para bajar de nivel</span><input type="number" name="histeresis" min="0" max="200" step="1" required></label>
+      <label>Repetir alarma <span class="ayuda">cada … segundos en rojo</span><input type="number" name="repetir_seg" min="5" max="600" step="1" required></label>
+      <label>Silencio <span class="ayuda">minutos</span><input type="number" name="silencio_min" min="1" max="120" step="1" required></label>
+      <div class="acciones">
+        <button type="submit" class="boton">Guardar umbrales</button>
+        <p id="config-estado" class="estado-form" role="status"></p>
+      </div>
+    </form>
+  </section>
+
+  <section class="equipo" aria-labelledby="t-equipo">
+    <h2 id="t-equipo">Equipo</h2>
+    <dl id="equipo">
+      <div><dt>Wi-Fi</dt><dd data-k="modo">—</dd></div>
+      <div><dt>IP</dt><dd data-k="ip">—</dd></div>
+      <div><dt>Señal</dt><dd data-k="rssi">—</dd></div>
+      <div><dt>Encendido hace</dt><dd data-k="uptime">—</dd></div>
+      <div><dt>Memoria libre</dt><dd data-k="heap">—</dd></div>
+      <div><dt>BSEC</dt><dd data-k="bsec">—</dd></div>
+    </dl>
+  </section>
+</main>
+
+<footer class="pie">
+  <a class="boton" href="/api/export.csv" download="aire_iot.csv">Exportar CSV</a>
+  <button type="button" class="boton" id="tema">Tema: automático</button>
+</footer>
+
+<script src="uplot.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
