@@ -1,7 +1,7 @@
-// storage.cpp — ver storage.h.
+// storage.cpp — memoria no volátil (NVS) y buffers de historial en RAM.
 #include <Arduino.h>
 #include <Preferences.h>
-#include "control.h"  // validarConfig()
+#include "control.h"
 #include "storage.h"
 
 Anillo<Muestra, N_HIST> historial;
@@ -13,9 +13,8 @@ static Preferences nvs;
 static Promedio minuto;
 static uint32_t inicioMinutoS = 0;
 static uint16_t proximoId = 1;
-// ponytail: un solo lock global para todos los buffers; alcanza porque cada sección crítica copia < 100 bytes.
 static portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
-static const uint32_t VERSION_CONFIG = 2;  // v2: repetirMin (min) → repetirSeg (s)  // subir si cambia el struct Config
+static const uint32_t VERSION_CONFIG = 4;
 
 void storageBloquear() { portENTER_CRITICAL(&lock); }
 void storageDesbloquear() { portEXIT_CRITICAL(&lock); }
@@ -46,11 +45,11 @@ void storageGuardarBsec(const uint8_t* buf, size_t tam) {
   Serial.println(F("# Estado de calibración BSEC guardado en NVS"));
 }
 
-void storageAgregar(const Lectura& l, uint8_t led, uint32_t ahoraS) {
-  Muestra m = empaquetar(l, ahoraS, led);
+void storageAgregar(const Lectura& l, uint32_t ahoraS) {
+  Muestra m = empaquetar(l, ahoraS);
   bool cerrarMinuto = !minuto.vacio() && ahoraS - inicioMinutoS >= 60;
   Muestra prom;
-  if (cerrarMinuto) prom = empaquetar(minuto.resultado(), inicioMinutoS, led);
+  if (cerrarMinuto) prom = empaquetar(minuto.resultado(), inicioMinutoS);
   storageBloquear();
   vivo.agregar(m);
   if (cerrarMinuto) historial.agregar(prom);

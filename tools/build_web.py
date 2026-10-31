@@ -58,4 +58,4 @@ if __name__ == "__main__":
         print("web_assets.h al día")
     else:
         SALIDA.write_text(header, encoding="utf-8")
-        print(f"web_assets.h: {crudo} B → {comprimido} B gzip ({comprimido / 1024:.1f} KB)")
+        print(f"web_assets.h: {crudo} B -> {comprimido} B gzip ({comprimido / 1024:.1f} KB)")

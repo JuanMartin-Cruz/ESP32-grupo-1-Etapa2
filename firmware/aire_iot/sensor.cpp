@@ -1,9 +1,48 @@
-// sensor.cpp — BME680 + BSEC2 o, con SIMULATION, el generador sintético de sensor.h.
+// sensor.cpp — BME680 + BSEC2, LDR y sensor de sonido digital KY-002.
 #include <Arduino.h>
 #include <Wire.h>
 #include "config.h"
 #include "sensor.h"
 #include "storage.h"
+
+// ---------------- Adquisición rápida de Sonido (KY-002) ----------------
+static volatile uint32_t contadorPulsos = 0;
+static uint32_t ultimoMuestreoSonidoMs = 0;
+
+static void IRAM_ATTR isrSonido() {
+  contadorPulsos++;
+}
+
+float sensorLeerLdr() {
+  uint32_t suma = 0;
+  for (int i = 0; i < 4; i++) {
+    suma += analogRead(PIN_LDR);
+  }
+  float crudo = (float)suma / 4.0f;
+  // Convertir 0–4095 a porcentaje (0–100%)
+  float pct = (crudo / 4095.0f) * 100.0f;
+  return pct < 0.0f ? 0.0f : pct > 100.0f ? 100.0f : pct;
+}
+
+float sensorLeerSonido(uint32_t& pulsosOut) {
+  uint32_t ahora = millis();
+  uint32_t dt = ahora - ultimoMuestreoSonidoMs;
+  if (dt == 0) dt = 1;
+  noInterrupts();
+  uint32_t pulsos = contadorPulsos;
+  contadorPulsos = 0;
+  interrupts();
+  ultimoMuestreoSonidoMs = ahora;
+
+  // Pulsos por segundo (Hz)
+  pulsosOut = (uint32_t)((pulsos * 1000ULL) / dt);
+
+  // Normalizar a porcentaje de actividad sonora (0–100%)
+  // Un ambiente en silencio produce < 10 Hz; murmullo/charla 30–150 Hz; ruido alto > 300 Hz
+  float nivel = (float)pulsosOut * (100.0f / 300.0f);
+  if (nivel > 100.0f) nivel = 100.0f;
+  return nivel;
+}
 
 #ifndef SIMULATION
 #include <bsec2.h>
@@ -19,7 +58,6 @@ static bool hayNueva = false, ok = false, guardadoInicial = false;
 static uint32_t ultimoIntento = 0, ultimoGuardado = 0;
 static char version[20] = "?";
 
-// BSEC llama a esta función cuando tiene salidas nuevas.
 static void alRecibir(const bme68xData, const bsecOutputs salidas, const Bsec2) {
   for (uint8_t i = 0; i < salidas.nOutputs; i++) {
     const bsecData& o = salidas.output[i];
@@ -30,7 +68,7 @@ static void alRecibir(const bme68xData, const bsecOutputs salidas, const Bsec2) 
       case BSEC_OUTPUT_BREATH_VOC_EQUIVALENT: ultima.bvoc = o.signal; break;
       case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE: ultima.temp = o.signal; break;
       case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY: ultima.hum = o.signal; break;
-      case BSEC_OUTPUT_RAW_PRESSURE: ultima.pres = o.signal; break;  // Bsec2::run() ya la pasó a hPa
+      case BSEC_OUTPUT_RAW_PRESSURE: ultima.pres = o.signal; break;
       case BSEC_OUTPUT_RAW_GAS: ultima.gas = o.signal; break;
       default: break;
     }
@@ -66,6 +104,11 @@ static bool iniciarBsec() {
 }
 
 bool sensorIniciar() {
+  pinMode(PIN_LDR, INPUT);
+  pinMode(PIN_SONIDO, INPUT);
+  attachInterrupt(digitalPinToInterrupt(PIN_SONIDO), isrSonido, CHANGE);
+  ultimoMuestreoSonidoMs = millis();
+
   ultimoIntento = millis();
   ok = iniciarBsec();
   return ok;
@@ -75,11 +118,9 @@ bool sensorActualizar(Lectura& out) {
   uint32_t ahora = millis();
   if (!ok) {
     if (ahora - ultimoIntento < SENSOR_REINTENTO_MS) return false;
-    sensorIniciar();  // reintentar; si funcionó, la lectura llega en una vuelta siguiente
+    sensorIniciar();
     return false;
   }
-  // run() devuelve false también ante advertencias (ej. el loop se demoró): solo los errores
-  // (códigos negativos de BSEC o del BME68x, como una falla de I2C) cuentan como sensor caído.
   if (!bsec.run() && (bsec.status < BSEC_OK || bsec.sensor.status < BME68X_OK)) {
     ok = false;
     ultimoIntento = ahora;
@@ -88,8 +129,13 @@ bool sensorActualizar(Lectura& out) {
   }
   if (!hayNueva) return false;
   hayNueva = false;
+
+  // Incorporar lecturas de LDR y Sonido digital muestreado a alta velocidad
+  ultima.ldr = sensorLeerLdr();
+  ultima.sonido = sensorLeerSonido(ultima.pulsosSonido);
+  ultima.conectado = true;
   out = ultima;
-  // Guardar la calibración: la primera vez que llega a 3 y después cada 4 h.
+
   if (ultima.precision == 3 && (!guardadoInicial || ahora - ultimoGuardado >= BSEC_GUARDAR_MS)) {
     uint8_t estado[BSEC_MAX_STATE_BLOB_SIZE];
     if (bsec.getState(estado)) {
@@ -109,7 +155,10 @@ const char* sensorVersion() { return version; }
 static uint32_t proxima = 0;
 
 bool sensorIniciar() {
-  Serial.println(F("# MODO SIMULACIÓN: datos sintéticos, no hay sensor"));
+  pinMode(PIN_LDR, INPUT);
+  pinMode(PIN_SONIDO, INPUT);
+  Serial.printf("# MODO SIMULACIÓN: Nodo %s con datos sintéticos\n",
+                NODO_ROL == ROL_AULA ? "AULA (INTERIOR)" : "PASILLO (EXTERIOR)");
   return true;
 }
 
@@ -117,7 +166,7 @@ bool sensorActualizar(Lectura& out) {
   uint32_t ahora = millis();
   if ((int32_t)(ahora - proxima) < 0) return false;
   proxima = ahora + SIM_PERIODO_MS;
-  out = simular(esp_timer_get_time() / 1e6);
+  out = simular(esp_timer_get_time() / 1e6, NODO_ROL == ROL_PASILLO);
   return true;
 }
 

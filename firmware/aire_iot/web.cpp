@@ -1,12 +1,11 @@
-// web.cpp — Wi-Fi (estación → AP), mDNS, hora por NTP, servidor HTTP y WebSocket.
-// Los handlers corren en la tarea de AsyncTCP, NO en loop(): por eso todo acceso a
-// buffers/config va con storageBloquear() y los pedidos al lazo usan banderas.
+// web.cpp — Wi-Fi, servidor HTTP, WebSocket y sincronización entre Nodo Aula y Pasillo.
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <ESPAsyncWebServer.h>
 #include <AsyncJson.h>
 #include <ArduinoJson.h>
+#include <HTTPClient.h>
 #include <memory>
 #include "web.h"
 #include "storage.h"
@@ -15,40 +14,68 @@
 #if __has_include("secrets.h")
 #include "secrets.h"
 #else
-#error "Falta secrets.h: copiá secrets.example.h como secrets.h y completá tu Wi-Fi"
+#include "secrets.example.h"
 #endif
 
 enum class ModoWifi { CONECTANDO, STA, AP };
 static ModoWifi modo = ModoWifi::CONECTANDO;
-static uint32_t inicioWifi = 0, ultimaLimpieza = 0;
+static uint32_t inicioWifi = 0, ultimaLimpieza = 0, ultimoEnvioRemoto = 0;
 static AsyncWebServer server(80);
 static AsyncWebSocket ws("/ws");
 static volatile bool pedidoSilencio = false;
-static Lectura ultima;          // última lectura publicada (protegida por el lock)
+
+static Lectura lecturaLocal;
+static Lectura lecturaRemota;
+static uint32_t ultimoRemotoMs = 0;
 static EstadoControl ultimoEstado;
-static bool hayLectura = false;
+static bool hayLecturaLocal = false;
 
 static const char* nombreModo() {
   return modo == ModoWifi::STA ? "STA" : modo == ModoWifi::AP ? "AP" : "conectando";
 }
 
-// Arma el JSON de una lectura + estado. Lo usan /ws y /api/current.
-static void llenarLectura(JsonDocument& d, const Lectura& l, const EstadoControl& s) {
+static void empaquetarNodoJson(JsonObject obj, const Lectura& l) {
+  obj["iaq"] = l.iaq;
+  obj["temp"] = l.temp;
+  obj["hum"] = l.hum;
+  obj["pres"] = l.pres;
+  obj["gas"] = l.gas;
+  obj["ldr"] = l.ldr;
+  obj["sonido"] = l.sonido;
+  obj["pulsos"] = l.pulsosSonido;
+  obj["acc"] = l.precision;
+  obj["conectado"] = l.conectado;
+}
+
+static void llenarLecturaCompleta(JsonDocument& d, const Lectura& loc, const Lectura& rem, const EstadoControl& s) {
   d["t"] = uptimeS();
-  d["iaq"] = l.iaq;  d["siaq"] = l.siaq;  d["acc"] = l.precision;
-  d["eco2"] = l.eco2; d["bvoc"] = l.bvoc;
-  d["temp"] = l.temp; d["hum"] = l.hum;  d["pres"] = l.pres;  d["gas"] = l.gas;
-  d["nivel"] = bandaBosch(l.iaq);
-  d["led"] = (uint8_t)s.led;
-  d["alarma"] = (uint8_t)s.alarma;
+  d["rol"] = (NODO_ROL == ROL_AULA) ? "aula" : "pasillo";
+  
+  JsonObject objAula = d["aula"].to<JsonObject>();
+  JsonObject objPasillo = d["pasillo"].to<JsonObject>();
+
+  if (NODO_ROL == ROL_AULA) {
+    empaquetarNodoJson(objAula, loc);
+    empaquetarNodoJson(objPasillo, rem);
+  } else {
+    empaquetarNodoJson(objAula, rem);
+    empaquetarNodoJson(objPasillo, loc);
+  }
+
+  JsonObject delta = d["delta"].to<JsonObject>();
+  delta["iaq"] = s.deltaIaq;
+  delta["temp"] = s.deltaTemp;
+  delta["hum"] = s.deltaHum;
+  delta["ldr"] = s.deltaLdr;
+  delta["sonido"] = s.deltaSonido;
+
   d["sensor_ok"] = sensorOk();
 }
 
-// ---------- CSV en streaming (history y export) ----------
-// Se genera fila por fila a medida que el cliente pide bytes: nunca se arma el CSV entero en RAM.
+// ---------- CSV en streaming ----------
 struct Flujo {
-  bool enVivo;          // true: buffer de 3 s; false: historial de 1 min
-  uint32_t seq, fin;    // rango de números de secuencia a enviar
+  bool enVivo;
+  uint32_t seq, fin;
   bool cabecera = false;
   char linea[160];
   size_t len = 0, off = 0;
@@ -57,7 +84,7 @@ struct Flujo {
 static size_t llenar(Flujo& f, uint8_t* buf, size_t max) {
   size_t escrito = 0;
   while (escrito < max) {
-    if (f.off == f.len) {  // se terminó la línea anterior: preparar la siguiente
+    if (f.off == f.len) {
       f.off = 0;
       if (!f.cabecera) {
         f.len = strlcpy(f.linea, CSV_CABECERA, sizeof f.linea);
@@ -68,7 +95,7 @@ static size_t llenar(Flujo& f, uint8_t* buf, size_t max) {
         uint32_t paso = f.enVivo ? 3 : 60;
         storageBloquear();
         uint32_t primero = f.enVivo ? vivo.primero() : historial.primero();
-        if (f.seq < primero) f.seq = primero;  // se pisó mientras enviábamos: saltear
+        if (f.seq < primero) f.seq = primero;
         bool hay = f.seq < f.fin;
         if (hay) {
           m = f.enVivo ? vivo.en(f.seq) : historial.en(f.seq);
@@ -80,7 +107,7 @@ static size_t llenar(Flujo& f, uint8_t* buf, size_t max) {
         f.len = formatearFila(f.linea, sizeof f.linea, m, epoch, evento);
         f.seq++;
       } else {
-        break;  // fin del CSV
+        break;
       }
     }
     size_t n = min(max - escrito, f.len - f.off);
@@ -102,11 +129,10 @@ static void enviarCsv(AsyncWebServerRequest* r, const String& rango, bool descar
   storageDesbloquear();
   AsyncWebServerResponse* res = r->beginChunkedResponse(
       "text/csv", [f](uint8_t* buf, size_t max, size_t) -> size_t { return llenar(*f, buf, max); });
-  if (descarga) res->addHeader("Content-Disposition", "attachment; filename=\"aire_iot.csv\"");
+  if (descarga) res->addHeader("Content-Disposition", "attachment; filename=\"confort_aula_pasillo.csv\"");
   r->send(res);
 }
 
-// ---------- Rutas ----------
 static void enviarJson(AsyncWebServerRequest* r, int codigo, JsonDocument& d) {
   String out;
   serializeJson(d, out);
@@ -126,23 +152,53 @@ static void rutas() {
     r->send(res);
   });
 
+  auto* postRemoto = new AsyncCallbackJsonWebHandler("/api/nodo_remoto", [](AsyncWebServerRequest* r, JsonVariant& j) {
+    if (!j.is<JsonObject>()) return enviarError(r, "Payload JSON inválido");
+    storageBloquear();
+    lecturaRemota.iaq = j["iaq"] | 0.0f;
+    lecturaRemota.temp = j["temp"] | 0.0f;
+    lecturaRemota.hum = j["hum"] | 0.0f;
+    lecturaRemota.pres = j["pres"] | 0.0f;
+    lecturaRemota.gas = j["gas"] | 0.0f;
+    lecturaRemota.ldr = j["ldr"] | 0.0f;
+    lecturaRemota.sonido = j["sonido"] | 0.0f;
+    lecturaRemota.pulsosSonido = j["pulsos"] | 0;
+    lecturaRemota.precision = j["acc"] | 0;
+    lecturaRemota.conectado = true;
+    ultimoRemotoMs = millis();
+    storageDesbloquear();
+    r->send(200, "application/json", "{\"ok\":true}");
+  });
+  postRemoto->setMethod(HTTP_POST);
+  server.addHandler(postRemoto);
+
   server.on("/api/current", HTTP_GET, [](AsyncWebServerRequest* r) {
     JsonDocument d;
     storageBloquear();
-    Lectura l = ultima;
+    Lectura loc = lecturaLocal;
+    Lectura rem = lecturaRemota;
     EstadoControl s = ultimoEstado;
-    bool hay = hayLectura;
+    bool hay = hayLecturaLocal;
     storageDesbloquear();
-    if (hay) llenarLectura(d, l, s);
-    d["sensor_ok"] = sensorOk();  // siempre: sin él la UI no distingue "sin sensor" de "sin datos todavía"
+
+#ifdef SIMULATION
+    if (!rem.conectado) {
+      rem = simular(esp_timer_get_time() / 1e6, NODO_ROL != ROL_PASILLO);
+    }
+#endif
+
+    if (hay) llenarLecturaCompleta(d, loc, rem, s);
+    d["sensor_ok"] = sensorOk();
+
     JsonObject eq = d["equipo"].to<JsonObject>();
+    eq["rol"] = (NODO_ROL == ROL_AULA) ? "aula" : "pasillo";
     eq["modo"] = nombreModo();
     eq["ip"] = (modo == ModoWifi::AP ? WiFi.softAPIP() : WiFi.localIP()).toString();
     eq["rssi"] = modo == ModoWifi::STA ? WiFi.RSSI() : 0;
     eq["uptime"] = uptimeS();
     eq["heap"] = ESP.getFreeHeap();
     eq["bsec"] = sensorVersion();
-    eq["epoch_arranque"] = epochArranque;
+    eq["remoto_ok"] = rem.conectado;
     enviarJson(r, 200, d);
   });
 
@@ -164,44 +220,11 @@ static void rutas() {
       JsonObject o = a.add<JsonObject>();
       o["id"] = m.id;
       o["t"] = m.t;
-      o["label"] = String(m.etiqueta);  // String: copia (el buffer puede cambiar después)
+      o["label"] = String(m.etiqueta);
     }
     storageDesbloquear();
     enviarJson(r, 200, d);
   });
-
-  server.on("/api/config", HTTP_GET, [](AsyncWebServerRequest* r) {
-    storageBloquear();
-    Config c = config;
-    storageDesbloquear();
-    JsonDocument d;
-    d["umbral_amarillo"] = c.umbralAmarillo;
-    d["umbral_rojo"] = c.umbralRojo;
-    d["histeresis"] = c.histeresis;
-    d["repetir_seg"] = c.repetirSeg;
-    d["silencio_min"] = c.silencioMin;
-    enviarJson(r, 200, d);
-  });
-
-  auto* postConfig = new AsyncCallbackJsonWebHandler("/api/config", [](AsyncWebServerRequest* r, JsonVariant& j) {
-    storageBloquear();
-    Config c = config;
-    storageDesbloquear();
-    // Campo ausente o de otro tipo → se mantiene el valor actual.
-    c.umbralAmarillo = j["umbral_amarillo"] | c.umbralAmarillo;
-    c.umbralRojo = j["umbral_rojo"] | c.umbralRojo;
-    c.histeresis = j["histeresis"] | c.histeresis;
-    c.repetirSeg = j["repetir_seg"] | c.repetirSeg;
-    c.silencioMin = j["silencio_min"] | c.silencioMin;
-    if (const char* error = validarConfig(c)) return enviarError(r, error);
-    storageBloquear();
-    config = c;
-    storageDesbloquear();
-    storageGuardarConfig(c);
-    r->send(200, "application/json", "{\"ok\":true}");
-  });
-  postConfig->setMethod(HTTP_POST);  // por defecto también acepta GET y pisaría otras rutas
-  server.addHandler(postConfig);
 
   auto* postMarker = new AsyncCallbackJsonWebHandler("/api/marker", [](AsyncWebServerRequest* r, JsonVariant& j) {
     const char* label = j["label"] | "";
@@ -215,22 +238,18 @@ static void rutas() {
     }
     enviarJson(r, 200, d);
   });
-  postMarker->setMethod(HTTP_POST);  // por defecto también acepta GET y pisaría otras rutas
+  postMarker->setMethod(HTTP_POST);
   server.addHandler(postMarker);
-
-  server.on("/api/silence", HTTP_POST, [](AsyncWebServerRequest* r) {
-    pedidoSilencio = true;  // lo atiende loop() en la próxima vuelta
-    r->send(200, "application/json", "{\"ok\":true}");
-  });
 
   server.onNotFound([](AsyncWebServerRequest* r) { r->send(404, "text/plain", "No encontrado"); });
   server.addHandler(&ws);
 }
 
 static void iniciarServicios() {
-  if (MDNS.begin("aire")) MDNS.addService("http", "tcp", 80);
+  const char* host = (NODO_ROL == ROL_AULA) ? "aire" : "pasillo";
+  if (MDNS.begin(host)) MDNS.addService("http", "tcp", 80);
   IPAddress ip = modo == ModoWifi::AP ? WiFi.softAPIP() : WiFi.localIP();
-  Serial.printf("# Wi-Fi %s. Abrí http://%s o http://aire.local\n", nombreModo(), ip.toString().c_str());
+  Serial.printf("# Wi-Fi %s. Abrí http://%s o http://%s.local\n", nombreModo(), ip.toString().c_str(), host);
 }
 
 void webIniciar() {
@@ -246,43 +265,87 @@ void webActualizar() {
   if (modo == ModoWifi::CONECTANDO) {
     if (WiFi.status() == WL_CONNECTED) {
       modo = ModoWifi::STA;
-      configTime(-3 * 3600, 0, "pool.ntp.org");  // Argentina, UTC−3
+      configTime(-3 * 3600, 0, "pool.ntp.org");
       iniciarServicios();
     } else if (ahora - inicioWifi > WIFI_TIMEOUT_MS) {
       WiFi.disconnect(true);
-      WiFi.mode(WIFI_AP);
-      WiFi.softAP(AP_SSID, AP_PASS);
-      modo = ModoWifi::AP;
-      iniciarServicios();
+      if (NODO_ROL == ROL_AULA) {
+        WiFi.mode(WIFI_AP);
+        WiFi.softAP("AireIoT_Aula", "aire1234");
+        modo = ModoWifi::AP;
+        iniciarServicios();
+      } else {
+        WiFi.mode(WIFI_STA);
+        WiFi.begin("AireIoT_Aula", "aire1234");
+        inicioWifi = ahora;
+      }
     }
   }
+
+  if (lecturaRemota.conectado && (ahora - ultimoRemotoMs > REMOTO_TIMEOUT_MS)) {
+    storageBloquear();
+    lecturaRemota.conectado = false;
+    storageDesbloquear();
+  }
+
   if (modo == ModoWifi::STA && epochArranque == 0) {
     time_t t = time(nullptr);
-    if (t > 1700000000) epochArranque = t - uptimeS();  // hay hora válida por NTP
+    if (t > 1700000000) epochArranque = t - uptimeS();
   }
+
   if (ahora - ultimaLimpieza > 1000) {
     ultimaLimpieza = ahora;
     ws.cleanupClients();
   }
 }
 
-void webPublicar(const Lectura& l, const EstadoControl& s) {
+void webPublicar(const Lectura& local, const Lectura& remoto, const EstadoControl& s) {
   storageBloquear();
-  ultima = l;
+  lecturaLocal = local;
   ultimoEstado = s;
-  hayLectura = true;
+  hayLecturaLocal = true;
   storageDesbloquear();
+
   if (ws.count() == 0) return;
   JsonDocument d;
-  llenarLectura(d, l, s);
-  char buf[384];
+  llenarLecturaCompleta(d, local, remoto, s);
+  char buf[768];
   serializeJson(d, buf, sizeof buf);
   ws.textAll(buf);
 }
 
+bool webObtenerRemoto(Lectura& out) {
+  storageBloquear();
+  out = lecturaRemota;
+  bool ok = lecturaRemota.conectado;
+  storageDesbloquear();
+  return ok;
+}
+
+void webEnviarLecturaRemota(const Lectura& local) {
+  uint32_t ahora = millis();
+  if (ahora - ultimoEnvioRemoto < REMOTO_SYNC_MS) return;
+  ultimoEnvioRemoto = ahora;
+
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  HTTPClient http;
+  String url = (WiFi.SSID() == "AireIoT_Aula") ? "http://192.168.4.1/api/nodo_remoto" : "http://aire.local/api/nodo_remoto";
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  JsonDocument d;
+  empaquetarNodoJson(d.to<JsonObject>(), local);
+  String payload;
+  serializeJson(d, payload);
+
+  http.POST(payload);
+  http.end();
+}
+
 void webLatidoSinSensor() {
   if (ws.count() == 0) return;
-  char buf[64];
+  char buf[128];
   snprintf(buf, sizeof buf, "{\"t\":%lu,\"sensor_ok\":false}", (unsigned long)uptimeS());
   ws.textAll(buf);
 }
