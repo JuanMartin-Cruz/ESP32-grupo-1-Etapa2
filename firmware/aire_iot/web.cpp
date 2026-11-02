@@ -35,15 +35,26 @@ static const char* nombreModo() {
 }
 
 static void empaquetarNodoJson(JsonObject obj, const Lectura& l) {
-  obj["iaq"] = l.iaq;
-  obj["temp"] = l.temp;
-  obj["hum"] = l.hum;
-  obj["gas"] = l.gas;
-  obj["ldr"] = l.ldr;
-  obj["sonido"] = l.sonido;
-  obj["pulsos"] = l.pulsosSonido;
-  obj["acc"] = l.precision;
   obj["conectado"] = l.conectado;
+  if (l.conectado) {
+    obj["iaq"] = l.iaq;
+    obj["temp"] = l.temp;
+    obj["hum"] = l.hum;
+    obj["gas"] = l.gas;
+    obj["ldr"] = l.ldr;
+    obj["sonido"] = l.sonido;
+    obj["pulsos"] = l.pulsosSonido;
+    obj["acc"] = l.precision;
+  } else {
+    obj["iaq"] = (char*)nullptr;
+    obj["temp"] = (char*)nullptr;
+    obj["hum"] = (char*)nullptr;
+    obj["gas"] = (char*)nullptr;
+    obj["ldr"] = (char*)nullptr;
+    obj["sonido"] = (char*)nullptr;
+    obj["pulsos"] = (char*)nullptr;
+    obj["acc"] = (char*)nullptr;
+  }
 }
 
 static void llenarLecturaCompleta(JsonDocument& d, const Lectura& loc, const Lectura& rem, const EstadoControl& s) {
@@ -62,11 +73,19 @@ static void llenarLecturaCompleta(JsonDocument& d, const Lectura& loc, const Lec
   }
 
   JsonObject delta = d["delta"].to<JsonObject>();
-  delta["iaq"] = s.deltaIaq;
-  delta["temp"] = s.deltaTemp;
-  delta["hum"] = s.deltaHum;
-  delta["ldr"] = s.deltaLdr;
-  delta["sonido"] = s.deltaSonido;
+  if (rem.conectado) {
+    delta["iaq"] = s.deltaIaq;
+    delta["temp"] = s.deltaTemp;
+    delta["hum"] = s.deltaHum;
+    delta["ldr"] = s.deltaLdr;
+    delta["sonido"] = s.deltaSonido;
+  } else {
+    delta["iaq"] = (char*)nullptr;
+    delta["temp"] = (char*)nullptr;
+    delta["hum"] = (char*)nullptr;
+    delta["ldr"] = (char*)nullptr;
+    delta["sonido"] = (char*)nullptr;
+  }
 
   d["sensor_ok"] = sensorOk();
 }
@@ -240,6 +259,23 @@ static void rutas() {
   server.addHandler(postMarker);
 
   server.onNotFound([](AsyncWebServerRequest* r) { r->send(404, "text/plain", "No encontrado"); });
+  ws.onEvent([](AsyncWebSocket *s, AsyncWebSocketClient *c, AwsEventType type, void *arg, uint8_t *data, size_t len) {
+    if (type == WS_EVT_CONNECT) {
+      storageBloquear();
+      Lectura loc = lecturaLocal;
+      Lectura rem = lecturaRemota;
+      EstadoControl st = ultimoEstado;
+      bool hay = hayLecturaLocal;
+      storageDesbloquear();
+      if (hay) {
+        JsonDocument d;
+        llenarLecturaCompleta(d, loc, rem, st);
+        char buf[768];
+        serializeJson(d, buf, sizeof buf);
+        c->text(buf);
+      }
+    }
+  });
   server.addHandler(&ws);
 }
 
@@ -292,7 +328,14 @@ void webIniciar() {
 void webActualizar() {
   uint32_t ahora = millis();
   if (modo == ModoWifi::CONECTANDO) {
+    static uint32_t ultimoPunto = 0;
+    if (ahora - ultimoPunto >= 1000) {
+      ultimoPunto = ahora;
+      Serial.print(".");
+    }
+
     if (WiFi.status() == WL_CONNECTED) {
+      Serial.println();
       modo = ModoWifi::STA;
       configTime(-3 * 3600, 0, "pool.ntp.org");
       iniciarServicios();

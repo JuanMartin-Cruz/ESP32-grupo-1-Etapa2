@@ -20,6 +20,14 @@ const char* validarConfig(const Config& c) {
 
 void calcularDeltasConfort(EstadoControl& s, const Lectura& aula, const Lectura& pasillo) {
   s.remotoConectado = pasillo.conectado;
+  if (!pasillo.conectado) {
+    s.deltaIaq = 0.0f;
+    s.deltaTemp = 0.0f;
+    s.deltaHum = 0.0f;
+    s.deltaLdr = 0.0f;
+    s.deltaSonido = 0.0f;
+    return;
+  }
   s.deltaIaq = aula.iaq - pasillo.iaq;
   s.deltaTemp = aula.temp - pasillo.temp;
   s.deltaHum = aula.hum - pasillo.hum;

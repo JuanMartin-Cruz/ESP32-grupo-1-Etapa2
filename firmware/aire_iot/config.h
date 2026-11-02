@@ -28,9 +28,6 @@ constexpr uint8_t PIN_LDR = 34;       // ADC1_CH6 (solo entrada, sin strapping)
 // Muestreo a alta velocidad (kHz) mediante interrupción de hardware en pin digital DO
 constexpr uint8_t PIN_SONIDO = 25;    // GPIO 25 con soporte de interrupción
 
-// NOTA: En la Etapa 2 se descartaron los LEDs, el Buzzer y el pulsador físico.
-// Los marcadores de eventos se gestionan directamente desde el dashboard web.
-
 // ---------------- Calibración y offsets ----------------
 constexpr float TEMP_OFFSET_C = 0.0f;
 
@@ -38,7 +35,7 @@ constexpr float TEMP_OFFSET_C = 0.0f;
 constexpr uint32_t DEBOUNCE_MS = 30;
 constexpr uint32_t CORTA_MAX_MS = 1000;
 constexpr uint32_t LARGA_MIN_MS = 1500;
-constexpr uint32_t WIFI_TIMEOUT_MS = 15000;
+constexpr uint32_t WIFI_TIMEOUT_MS = 10000;
 constexpr uint32_t BSEC_GUARDAR_MS = 4UL * 3600UL * 1000UL;
 constexpr uint32_t SENSOR_REINTENTO_MS = 10000;
 constexpr uint32_t SIM_PERIODO_MS = 3000;

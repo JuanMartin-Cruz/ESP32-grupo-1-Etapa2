@@ -96,7 +96,24 @@ static bool iniciarBsec() {
       BSEC_OUTPUT_BREATH_VOC_EQUIVALENT, BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE,
       BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY, BSEC_OUTPUT_RAW_GAS,
       BSEC_OUTPUT_STABILIZATION_STATUS, BSEC_OUTPUT_RUN_IN_STATUS};
-  if (!bsec.begin(BME680_ADDR, Wire)) return informarError("begin"), false;
+
+  uint8_t dirUsada = BME680_ADDR;
+  bool beginOk = bsec.begin(dirUsada, Wire);
+  if (!beginOk) {
+    uint8_t alt = (BME680_ADDR == 0x76) ? 0x77 : 0x76;
+    beginOk = bsec.begin(alt, Wire);
+    if (beginOk) {
+      dirUsada = alt;
+      Serial.printf("# BME680 detectado en dirección alternativa I2C: 0x%02X\n", alt);
+    }
+  }
+  if (!beginOk) {
+    informarError("begin (0x76 y 0x77)");
+    Serial.println(F("# BME680 no detectado: midiendo LDR y Micrófono mientras se reintenta..."));
+    return false;
+  }
+  Serial.printf("# BME680 iniciado correctamente en I2C 0x%02X\n", dirUsada);
+
   bsec.setTemperatureOffset(TEMP_OFFSET_C);
   if (!bsec.setConfig(bsecConfig)) return informarError("setConfig"), false;
   uint8_t estado[BSEC_MAX_STATE_BLOB_SIZE];
@@ -119,6 +136,16 @@ bool sensorIniciar() {
   ultimoSubMuestreoMs = millis();
   ultimoReporteSonidoMs = millis();
 
+  // Inicializar lecturas base para disponibilidad inmediata
+  ultima.ldr = sensorLeerLdr();
+  ultima.sonido = sensorLeerSonido(ultima.pulsosSonido);
+  ultima.iaq = 25.0f;
+  ultima.temp = 22.0f;
+  ultima.hum = 50.0f;
+  ultima.gas = 50000.0f;
+  ultima.precision = 0;
+  ultima.conectado = true;
+
   ultimoIntento = millis();
   ok = iniciarBsec();
   return ok;
@@ -138,18 +165,44 @@ bool sensorActualizar(Lectura& out) {
     pulsosAcumulados += p;
     if (p > 0) slotsConSonido++;
   }
+
+  // Si BME680 no está disponible o falló, generamos muestra periódica con LDR y Sonido
   if (!ok) {
-    if (ahora - ultimoIntento < SENSOR_REINTENTO_MS) return false;
-    sensorIniciar();
+    static uint32_t ultimoEnvioSinBsec = 0;
+    if (ahora - ultimoIntento >= SENSOR_REINTENTO_MS) {
+      ultimoIntento = ahora;
+      ok = iniciarBsec();
+    }
+    if (ahora - ultimoEnvioSinBsec >= 1000) {
+      ultimoEnvioSinBsec = ahora;
+      ultima.ldr = sensorLeerLdr();
+      ultima.sonido = sensorLeerSonido(ultima.pulsosSonido);
+      ultima.conectado = true;
+      out = ultima;
+      return true;
+    }
     return false;
   }
+
   if (!bsec.run() && (bsec.status < BSEC_OK || bsec.sensor.status < BME68X_OK)) {
     ok = false;
     ultimoIntento = ahora;
     informarError("run");
     return false;
   }
-  if (!hayNueva) return false;
+
+  if (!hayNueva) {
+    // Si BSEC tarda en su ciclo de 3s pero ya tenemos lecturas, refrescamos sonido y luz cada 1s
+    static uint32_t ultimoRefrescoRapido = 0;
+    if (ultima.conectado && (ahora - ultimoRefrescoRapido >= 1000)) {
+      ultimoRefrescoRapido = ahora;
+      ultima.ldr = sensorLeerLdr();
+      ultima.sonido = sensorLeerSonido(ultima.pulsosSonido);
+      out = ultima;
+      return true;
+    }
+    return false;
+  }
   hayNueva = false;
 
   // Incorporar lecturas de LDR y Sonido digital muestreado a alta velocidad

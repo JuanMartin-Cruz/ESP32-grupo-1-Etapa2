@@ -166,7 +166,7 @@ function agregarDatoEnVivo(t, aula, pasillo) {
   GRAFICAS_DEF.forEach((def) => {
     const k = def.id;
     const valA = aula && aula[k] != null ? aula[k] : null;
-    const valP = pasillo && pasillo[k] != null ? pasillo[k] : null;
+    const valP = pasillo && pasillo.conectado === true && pasillo[k] != null ? pasillo[k] : null;
 
     v.aula[k].push(valA);
     v.pasillo[k].push(valP);
@@ -215,50 +215,50 @@ function renderizarDatos(d) {
   const pasilloOk = pasillo.conectado === true;
   badgePasillo.classList.toggle("online", pasilloOk);
   badgePasillo.classList.toggle("offline", !pasilloOk);
-  $("#pasillo-estado").textContent = pasilloOk ? "Conectado (En línea)" : "Sin señal";
+  $("#pasillo-estado").textContent = pasilloOk ? "Conectado (En línea)" : "Sin señal (Solo Aula)";
 
   // 2. Evaluación de Confort y Tarjetas
   const evalC = evaluarConfort(aula);
 
   // IAQ
   $("#val-aula-iaq").textContent = aula.iaq != null ? Math.round(aula.iaq) : "—";
-  $("#val-pasillo-iaq").textContent = pasillo.iaq != null ? Math.round(pasillo.iaq) : "—";
+  $("#val-pasillo-iaq").textContent = pasilloOk && pasillo.iaq != null ? Math.round(pasillo.iaq) : "—";
   const bIaq = $("#estado-comp-iaq");
   bIaq.textContent = evalC.iaq.txt;
   bIaq.dataset.s = evalC.iaq.s;
-  $("#delta-iaq").textContent = fmtDelta(delta.iaq, " pts");
+  $("#delta-iaq").textContent = pasilloOk ? fmtDelta(delta.iaq, " pts") : "— (solo Aula)";
 
   // Temperatura
   $("#val-aula-temp").textContent = fmtNum(aula.temp, 1);
-  $("#val-pasillo-temp").textContent = fmtNum(pasillo.temp, 1);
+  $("#val-pasillo-temp").textContent = pasilloOk ? fmtNum(pasillo.temp, 1) : "—";
   const bTemp = $("#estado-comp-temp");
   bTemp.textContent = evalC.temp.txt;
   bTemp.dataset.s = evalC.temp.s;
-  $("#delta-temp").textContent = fmtDelta(delta.temp, " °C");
+  $("#delta-temp").textContent = pasilloOk ? fmtDelta(delta.temp, " °C") : "— (solo Aula)";
 
   // Humedad
   $("#val-aula-hum").textContent = fmtNum(aula.hum, 0);
-  $("#val-pasillo-hum").textContent = fmtNum(pasillo.hum, 0);
+  $("#val-pasillo-hum").textContent = pasilloOk ? fmtNum(pasillo.hum, 0) : "—";
   const bHum = $("#estado-comp-hum");
   bHum.textContent = evalC.hum.txt;
   bHum.dataset.s = evalC.hum.s;
-  $("#delta-hum").textContent = fmtDelta(delta.hum, " %");
+  $("#delta-hum").textContent = pasilloOk ? fmtDelta(delta.hum, " %") : "— (solo Aula)";
 
   // Luz LDR
   $("#val-aula-ldr").textContent = fmtNum(aula.ldr, 0);
-  $("#val-pasillo-ldr").textContent = fmtNum(pasillo.ldr, 0);
+  $("#val-pasillo-ldr").textContent = pasilloOk ? fmtNum(pasillo.ldr, 0) : "—";
   const bLdr = $("#estado-comp-ldr");
   bLdr.textContent = evalC.ldr.txt;
   bLdr.dataset.s = evalC.ldr.s;
-  $("#delta-ldr").textContent = fmtDelta(delta.ldr, " %");
+  $("#delta-ldr").textContent = pasilloOk ? fmtDelta(delta.ldr, " %") : "— (solo Aula)";
 
   // Ruido KY-002
   $("#val-aula-sonido").textContent = fmtNum(aula.sonido, 0);
-  $("#val-pasillo-sonido").textContent = fmtNum(pasillo.sonido, 0);
+  $("#val-pasillo-sonido").textContent = pasilloOk ? fmtNum(pasillo.sonido, 0) : "—";
   const bSon = $("#estado-comp-sonido");
   bSon.textContent = evalC.sonido.txt;
   bSon.dataset.s = evalC.sonido.s;
-  $("#delta-sonido").textContent = fmtDelta(delta.sonido, " %");
+  $("#delta-sonido").textContent = pasilloOk ? fmtDelta(delta.sonido, " %") : "— (solo Aula)";
 
   // 3. Diagnóstico de Equipo
   if (d.equipo) {
