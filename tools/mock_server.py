@@ -18,7 +18,7 @@ import time
 from collections import deque
 
 WEB = pathlib.Path(__file__).resolve().parent.parent / "web"
-CABECERA = "uptime_s,epoch,iaq,acc,eco2,bvoc,temp,hum,pres,gas,ldr,sonido,evento"
+CABECERA = "uptime_s,epoch,iaq,acc,eco2,bvoc,temp,hum,gas,ldr,sonido,evento"
 
 
 def simular(t: float, exterior: bool = False) -> dict:
@@ -40,7 +40,6 @@ def simular(t: float, exterior: bool = False) -> dict:
             "bvoc": 0.5 * math.exp(iaq / 100),
             "temp": 23.5 + 1.2 * math.sin(dos_pi * t / 7200) + 0.01 * pico,
             "hum": 48.0 + 4.0 * math.sin(dos_pi * t / 5400) + 0.02 * pico,
-            "pres": 1013.0 + 0.5 * math.sin(dos_pi * t / 10800),
             "gas": 140000 * math.exp(-iaq / 150),
             "ldr": ldr,
             "sonido": sonido,
@@ -62,7 +61,6 @@ def simular(t: float, exterior: bool = False) -> dict:
             "bvoc": 0.4 * math.exp(iaq_ext / 130),
             "temp": 20.8 + 1.8 * math.sin(dos_pi * (t - 600) / 7200),
             "hum": 52.0 + 6.0 * math.sin(dos_pi * t / 5400),
-            "pres": 1013.2 + 0.5 * math.sin(dos_pi * t / 10800),
             "gas": 175000 * math.exp(-iaq_ext / 160),
             "ldr": ldr_ext,
             "sonido": sonido_ext,
@@ -131,7 +129,6 @@ class EquipoMock:
             "bvoc": aula["bvoc"],
             "temp": aula["temp"],
             "hum": aula["hum"],
-            "pres": aula["pres"],
             "gas": aula["gas"],
             "ldr": aula["ldr"],
             "sonido": aula["sonido"],
@@ -149,7 +146,7 @@ class EquipoMock:
             ev = next((m["label"] for m in self.marcadores if f["t"] <= m["t"] < f["t"] + paso), "")
             lineas.append(
                 f'{f["t"]},{self.epoch_arranque + f["t"]},{f["iaq"]:.1f},{f["acc"]},'
-                f'{round(f["eco2"])},{f["bvoc"]:.2f},{f["temp"]:.2f},{f["hum"]:.2f},{f["pres"]:.1f},'
+                f'{round(f["eco2"])},{f["bvoc"]:.2f},{f["temp"]:.2f},{f["hum"]:.2f},'
                 f'{round(f["gas"])},{round(f["ldr"])},{round(f["sonido"])},{ev}'
             )
         return "\n".join(lineas) + "\n"
@@ -246,7 +243,22 @@ def precargar(eq: EquipoMock):
             "bvoc": aula["bvoc"],
             "temp": aula["temp"],
             "hum": aula["hum"],
-            "pres": aula["pres"],
+            "gas": aula["gas"],
+            "ldr": aula["ldr"],
+            "sonido": aula["sonido"],
+        })
+
+    for s in range(300, 0, -1):
+        t = -s * 3
+        aula = simular(t + 86400, exterior=False)
+        eq.vivo.append({
+            "t": t,
+            "iaq": aula["iaq"],
+            "acc": 3,
+            "eco2": aula["eco2"],
+            "bvoc": aula["bvoc"],
+            "temp": aula["temp"],
+            "hum": aula["hum"],
             "gas": aula["gas"],
             "ldr": aula["ldr"],
             "sonido": aula["sonido"],

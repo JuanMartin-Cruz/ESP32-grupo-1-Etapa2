@@ -5,20 +5,25 @@
 #include "sensor.h"
 #include "storage.h"
 
-// ---------------- Adquisición rápida de Sonido (KY-002) ----------------
-static volatile uint32_t contadorPulsos = 0;
-static uint32_t ultimoMuestreoSonidoMs = 0;
+// ---------------- Adquisición rápida de Sonido (KY-037 / KY-002) ----------------
+static volatile uint32_t pulsosSubVentana = 0;
+static uint32_t ultimoSubMuestreoMs = 0;
+static uint32_t ultimoReporteSonidoMs = 0;
+static uint32_t slotsConSonido = 0;
+static uint32_t totalSubVentanas = 0;
+static uint32_t pulsosAcumulados = 0;
+static float nivelRuidoFiltrado = 10.0f;
 
 static void IRAM_ATTR isrSonido() {
-  contadorPulsos++;
+  pulsosSubVentana++;
 }
 
 float sensorLeerLdr() {
   uint32_t suma = 0;
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 8; i++) {
     suma += analogRead(PIN_LDR);
   }
-  float crudo = (float)suma / 4.0f;
+  float crudo = (float)suma / 8.0f;
   // Convertir 0–4095 a porcentaje (0–100%)
   float pct = (crudo / 4095.0f) * 100.0f;
   return pct < 0.0f ? 0.0f : pct > 100.0f ? 100.0f : pct;
@@ -26,22 +31,27 @@ float sensorLeerLdr() {
 
 float sensorLeerSonido(uint32_t& pulsosOut) {
   uint32_t ahora = millis();
-  uint32_t dt = ahora - ultimoMuestreoSonidoMs;
+  uint32_t dt = ahora - ultimoReporteSonidoMs;
   if (dt == 0) dt = 1;
-  noInterrupts();
-  uint32_t pulsos = contadorPulsos;
-  contadorPulsos = 0;
-  interrupts();
-  ultimoMuestreoSonidoMs = ahora;
 
-  // Pulsos por segundo (Hz)
-  pulsosOut = (uint32_t)((pulsos * 1000ULL) / dt);
+  float factorOcupacion = (totalSubVentanas > 0) ? ((float)slotsConSonido / totalSubVentanas) * 100.0f : 0.0f;
+  float frecuenciaMediaHz = (pulsosAcumulados * 1000.0f) / dt;
+  pulsosOut = (uint32_t)frecuenciaMediaHz;
 
-  // Normalizar a porcentaje de actividad sonora (0–100%)
-  // Un ambiente en silencio produce < 10 Hz; murmullo/charla 30–150 Hz; ruido alto > 300 Hz
-  float nivel = (float)pulsosOut * (100.0f / 300.0f);
-  if (nivel > 100.0f) nivel = 100.0f;
-  return nivel;
+  // Normalizar porcentaje de ruido combinando ocupación continua + densidad de pulsos
+  float nivelCrudo = (factorOcupacion * 0.60f) + ((frecuenciaMediaHz / 200.0f) * 40.0f);
+  if (nivelCrudo > 100.0f) nivelCrudo = 100.0f;
+
+  // Filtro exponencial tipo sonómetro IEC 61672
+  const float ALFA = 0.35f;
+  nivelRuidoFiltrado = (ALFA * nivelCrudo) + ((1.0f - ALFA) * nivelRuidoFiltrado);
+
+  slotsConSonido = 0;
+  totalSubVentanas = 0;
+  pulsosAcumulados = 0;
+  ultimoReporteSonidoMs = ahora;
+
+  return nivelRuidoFiltrado;
 }
 
 #ifndef SIMULATION
@@ -68,7 +78,6 @@ static void alRecibir(const bme68xData, const bsecOutputs salidas, const Bsec2) 
       case BSEC_OUTPUT_BREATH_VOC_EQUIVALENT: ultima.bvoc = o.signal; break;
       case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE: ultima.temp = o.signal; break;
       case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY: ultima.hum = o.signal; break;
-      case BSEC_OUTPUT_RAW_PRESSURE: ultima.pres = o.signal; break;
       case BSEC_OUTPUT_RAW_GAS: ultima.gas = o.signal; break;
       default: break;
     }
@@ -85,7 +94,7 @@ static bool iniciarBsec() {
   bsecSensor lista[] = {
       BSEC_OUTPUT_IAQ, BSEC_OUTPUT_STATIC_IAQ, BSEC_OUTPUT_CO2_EQUIVALENT,
       BSEC_OUTPUT_BREATH_VOC_EQUIVALENT, BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE,
-      BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY, BSEC_OUTPUT_RAW_PRESSURE, BSEC_OUTPUT_RAW_GAS,
+      BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY, BSEC_OUTPUT_RAW_GAS,
       BSEC_OUTPUT_STABILIZATION_STATUS, BSEC_OUTPUT_RUN_IN_STATUS};
   if (!bsec.begin(BME680_ADDR, Wire)) return informarError("begin"), false;
   bsec.setTemperatureOffset(TEMP_OFFSET_C);
@@ -107,7 +116,8 @@ bool sensorIniciar() {
   pinMode(PIN_LDR, INPUT);
   pinMode(PIN_SONIDO, INPUT);
   attachInterrupt(digitalPinToInterrupt(PIN_SONIDO), isrSonido, CHANGE);
-  ultimoMuestreoSonidoMs = millis();
+  ultimoSubMuestreoMs = millis();
+  ultimoReporteSonidoMs = millis();
 
   ultimoIntento = millis();
   ok = iniciarBsec();
@@ -116,6 +126,18 @@ bool sensorIniciar() {
 
 bool sensorActualizar(Lectura& out) {
   uint32_t ahora = millis();
+
+  // Sub-muestreo acústico continuo cada 50 ms
+  if (ahora - ultimoSubMuestreoMs >= 50) {
+    ultimoSubMuestreoMs = ahora;
+    noInterrupts();
+    uint32_t p = pulsosSubVentana;
+    pulsosSubVentana = 0;
+    interrupts();
+    totalSubVentanas++;
+    pulsosAcumulados += p;
+    if (p > 0) slotsConSonido++;
+  }
   if (!ok) {
     if (ahora - ultimoIntento < SENSOR_REINTENTO_MS) return false;
     sensorIniciar();

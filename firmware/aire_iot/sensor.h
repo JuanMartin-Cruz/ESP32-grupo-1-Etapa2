@@ -10,7 +10,6 @@ struct Lectura {
   float bvoc = 0;             // VOC equivalente estimado [ppm]
   float temp = 0;             // Temperatura compensada [°C]
   float hum = 0;              // Humedad compensada [%]
-  float pres = 0;             // Presión atmosférica [hPa]
   float gas = 0;              // Resistencia del sensor de gas [ohm]
   float ldr = 0;              // Nivel de iluminación [0–100 %]
   float sonido = 0;           // Nivel de actividad sonora / ruido [0–100 %]
@@ -36,7 +35,6 @@ inline Lectura simular(double t, bool exterior = false) {
     l.bvoc = 0.5f * exp(l.iaq / 100.0f);
     l.temp = 23.5f + 1.2f * sin(DOS_PI * t / 7200) + 0.01f * pico;
     l.hum = 48.0f + 4.0f * sin(DOS_PI * t / 5400) + 0.02f * pico;
-    l.pres = 1013.0f + 0.5f * sin(DOS_PI * t / 10800);
     l.gas = 140000.0f * exp(-l.iaq / 150.0f);
     
     // Iluminación Aula: Luces encendidas (70–85%) con leve variación
@@ -60,7 +58,6 @@ inline Lectura simular(double t, bool exterior = false) {
     l.bvoc = 0.4f * exp(l.iaq / 130.0f);
     l.temp = 20.8f + 1.8f * sin(DOS_PI * (t - 600) / 7200);
     l.hum = 52.0f + 6.0f * sin(DOS_PI * t / 5400);
-    l.pres = 1013.2f + 0.5f * sin(DOS_PI * t / 10800);
     l.gas = 175000.0f * exp(-l.iaq / 160.0f);
     
     // Iluminación Pasillo: Luz difusa y natural (45–65%)

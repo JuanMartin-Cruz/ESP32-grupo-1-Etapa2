@@ -23,9 +23,9 @@ Ambos nodos capturan 5 magnitudes de confort y sincronizan sus lecturas a travé
 flowchart LR
     subgraph AULA["🏫 NODO INTERIOR (Aula)"]
         ESP1["ESP32 DevKit V1<br/>Nodo Aula (Servidor / Concentrador)"]
-        BME1["BME680 (I2C)<br/>IAQ, Temp, Humedad, Presión"]
+        BME1["BME680 (I2C)<br/>IAQ, Temp, Humedad"]
         LDR1["Módulo LDR (ADC1)<br/>Iluminación del aula"]
-        SON1["KY-002 Sonido (Digital)<br/>Muestreo a alta velocidad"]
+        SON1["KY-037 / KY-002 (Digital DO)<br/>Muestreo a alta velocidad"]
         BME1 --> ESP1
         LDR1 --> ESP1
         SON1 --> ESP1
@@ -33,9 +33,9 @@ flowchart LR
 
     subgraph PASILLO["🚪 NODO EXTERIOR (Pasillo)"]
         ESP2["ESP32 DevKit V1<br/>Nodo Pasillo (Remoto)"]
-        BME2["BME680 (I2C)<br/>IAQ, Temp, Humedad, Presión"]
+        BME2["BME680 (I2C)<br/>IAQ, Temp, Humedad"]
         LDR2["Módulo LDR (ADC1)<br/>Iluminación del pasillo"]
-        SON2["KY-002 Sonido (Digital)<br/>Muestreo a alta velocidad"]
+        SON2["KY-037 / KY-002 (Digital DO)<br/>Muestreo a alta velocidad"]
         BME2 --> ESP2
         LDR2 --> ESP2
         SON2 --> ESP2
@@ -48,6 +48,8 @@ flowchart LR
     ESP2 -- Wi-Fi / API REST /api/nodo_remoto --> ESP1
     ESP1 <== WebSocket / HTTP ==> PANEL
 ```
+
+![Dashboard de Confort Multi-Nodo](docs/img/dashboard.png)
 
 ### Componentes Descartados del Proyecto Original
 
@@ -80,9 +82,9 @@ Si se realizara una lectura convencional cada 3 segundos, se perdería más del 
 | Componente | Cantidad | Función en el sistema |
 | :--- | :---: | :--- |
 | **ESP32 DevKit V1** | 2 | Microcontroladores principales (Nodo Aula y Nodo Pasillo). |
-| **Bosch BME680 (I2C)** | 2 | Calidad de aire, Temperatura, Humedad y Presión barométrica. |
+| **Bosch BME680 (I2C)** | 2 | Calidad de aire (IAQ, CO₂, VOC), Temperatura y Humedad relativa. |
 | **Módulos Fotorresistores LDR** | 2 | Medición analógica de iluminación ambiente conectada a **ADC1**. |
-| **Sensores de sonido KY-002** | 2 | Detección digital de actividad sonora con muestreo a alta velocidad. |
+| **Micrófonos KY-037 / KY-002** | 2 | Detección digital de actividad sonora (pin DO) con muestreo a alta velocidad. |
 | **Protoboards y jumpers** | 2 sets | Montaje físico independiente de cada nodo. |
 | **Cables de alimentación USB** | 2 | Alimentación de 5 V para ambos microcontroladores. |
 
@@ -96,8 +98,8 @@ Si se realizara una lectura convencional cada 3 segundos, se perdería más del 
 | **BME680 SDA / SCL** | **GPIO 21 / GPIO 22** | Digital I2C | Bus I2C de hardware |
 | **BME680 SDO** | **GND** | Configuración | Fija dirección I2C en `0x76` |
 | **BME680 CS** | **3V3** | Configuración | Fija el sensor en modo I2C |
-| **LDR (Salida analógica)** | **GPIO 34** | Entrada Analógica | Conectado a **ADC1_CH6** (compatible con Wi-Fi) |
-| **KY-002 (Salida digital S)** | **GPIO 25** | Entrada Digital | Pin con interrupción de hardware (muestreo a kHz) |
+| **LDR (Salida analógica AO)** | **GPIO 34** | Entrada Analógica | Conectado a **ADC1_CH6** (compatible con Wi-Fi) |
+| **KY-037 / KY-002 (Salida digital DO)** | **GPIO 25** | Entrada Digital | Pin con interrupción de hardware (muestreo a kHz) |
 
 ### Comunicación e Integración entre los Dos ESP32
 

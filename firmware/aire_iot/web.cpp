@@ -38,7 +38,6 @@ static void empaquetarNodoJson(JsonObject obj, const Lectura& l) {
   obj["iaq"] = l.iaq;
   obj["temp"] = l.temp;
   obj["hum"] = l.hum;
-  obj["pres"] = l.pres;
   obj["gas"] = l.gas;
   obj["ldr"] = l.ldr;
   obj["sonido"] = l.sonido;
@@ -147,7 +146,7 @@ static void enviarError(AsyncWebServerRequest* r, const char* mensaje) {
 
 static void rutas() {
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* r) {
-    AsyncWebServerResponse* res = r->beginResponse(200, "text/html", INDEX_HTML_GZ, INDEX_HTML_GZ_LEN);
+    AsyncWebServerResponse* res = r->beginResponse_P(200, "text/html", INDEX_HTML_GZ, INDEX_HTML_GZ_LEN);
     res->addHeader("Content-Encoding", "gzip");
     r->send(res);
   });
@@ -158,7 +157,6 @@ static void rutas() {
     lecturaRemota.iaq = j["iaq"] | 0.0f;
     lecturaRemota.temp = j["temp"] | 0.0f;
     lecturaRemota.hum = j["hum"] | 0.0f;
-    lecturaRemota.pres = j["pres"] | 0.0f;
     lecturaRemota.gas = j["gas"] | 0.0f;
     lecturaRemota.ldr = j["ldr"] | 0.0f;
     lecturaRemota.sonido = j["sonido"] | 0.0f;
@@ -248,11 +246,42 @@ static void rutas() {
 static void iniciarServicios() {
   const char* host = (NODO_ROL == ROL_AULA) ? "aire" : "pasillo";
   if (MDNS.begin(host)) MDNS.addService("http", "tcp", 80);
-  IPAddress ip = modo == ModoWifi::AP ? WiFi.softAPIP() : WiFi.localIP();
-  Serial.printf("# Wi-Fi %s. Abrí http://%s o http://%s.local\n", nombreModo(), ip.toString().c_str(), host);
+  IPAddress ip = (modo == ModoWifi::AP) ? WiFi.softAPIP() : WiFi.localIP();
+  if (modo == ModoWifi::AP) {
+    Serial.println(F("\n========================================================"));
+    Serial.println(F(">>> PUNTO DE ACCESO WI-FI CREADO POR EL ESP32 <<<"));
+    Serial.println(F("1. Conectate desde tu celular o PC a la red Wi-Fi:"));
+    Serial.println(F("   - Nombre (SSID): AireIoT_Aula"));
+    Serial.println(F("   - Contraseña:    aire1234"));
+    Serial.printf( "2. Abrí tu navegador y entrá a: http://%s\n", ip.toString().c_str());
+    Serial.println(F("========================================================\n"));
+  } else {
+    Serial.printf("# Wi-Fi Conectado (STA). Abrí http://%s o http://%s.local\n", ip.toString().c_str(), host);
+  }
 }
 
 void webIniciar() {
+  // Advertencia si se intentó configurar una red de 5 GHz
+  if (strstr(WIFI_SSID, "5.8") != nullptr || strstr(WIFI_SSID, "5GHz") != nullptr || strstr(WIFI_SSID, "5Ghz") != nullptr) {
+    Serial.println(F("\n⚠️ ATENCIÓN: El ESP32 solo soporta Wi-Fi 2.4 GHz."));
+    Serial.println(F("   No puede conectarse a '5.8Ghz'. Cambiá el nombre por la red 2.4 GHz en secrets.h\n"));
+  }
+
+  // Si no se configuró una red real (está con el placeholder por defecto) y somos el Aula:
+  if (strcmp(WIFI_SSID, "nombre-de-tu-red") == 0 && NODO_ROL == ROL_AULA) {
+    Serial.println(F("# Sin red Wi-Fi configurada: Iniciando Punto de Acceso propio..."));
+    WiFi.mode(WIFI_AP);
+    delay(100);
+    WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+    WiFi.softAP("AireIoT_Aula", "aire1234", 1, 0, 4);
+    modo = ModoWifi::AP;
+    rutas();
+    server.begin();
+    iniciarServicios();
+    return;
+  }
+
+  Serial.printf("# Intentando conectar a Wi-Fi '%s' (espera máx %d s)...\n", WIFI_SSID, (int)(WIFI_TIMEOUT_MS / 1000));
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   inicioWifi = millis();
@@ -268,11 +297,16 @@ void webActualizar() {
       configTime(-3 * 3600, 0, "pool.ntp.org");
       iniciarServicios();
     } else if (ahora - inicioWifi > WIFI_TIMEOUT_MS) {
+      Serial.println(F("\n# Tiempo agotado conectando a Wi-Fi: Iniciando Punto de Acceso (AP)..."));
       WiFi.disconnect(true);
+      delay(200);
       if (NODO_ROL == ROL_AULA) {
         WiFi.mode(WIFI_AP);
-        WiFi.softAP("AireIoT_Aula", "aire1234");
+        delay(100);
+        WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+        bool ok = WiFi.softAP("AireIoT_Aula", "aire1234", 1, 0, 4);
         modo = ModoWifi::AP;
+        Serial.printf("# Punto de acceso 'AireIoT_Aula': %s\n", ok ? "CREADO EXITOSAMENTE" : "FALLÓ");
         iniciarServicios();
       } else {
         WiFi.mode(WIFI_STA);

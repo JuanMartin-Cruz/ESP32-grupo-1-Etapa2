@@ -97,21 +97,21 @@ static void testAnillo() {
 static void testEmpaquetarYCsv() {
   Lectura l;
   l.iaq = 123.46f; l.eco2 = 900; l.bvoc = 1.234f;
-  l.temp = -5.5f; l.hum = 45.67f; l.pres = 1013.2f; l.gas = 123456;
+  l.temp = -5.5f; l.hum = 45.67f; l.gas = 123456;
   l.ldr = 75.0f; l.sonido = 35.0f; l.precision = 3;
   Muestra m = empaquetar(l, 60);
-  assert(m.iaq10 == 1235 && m.temp100 == -550 && m.pres10 == 10132 && m.gas == 123456);
+  assert(m.iaq10 == 1235 && m.temp100 == -550 && m.gas == 123456);
   assert(m.ldr == 75 && m.sonido == 35);
 
   char fila[200];
   formatearFila(fila, sizeof fila, m, 0, "");
-  assert(strcmp(fila, "60,,123.5,3,900,1.23,-5.50,45.67,1013.2,123456,75,35,\n") == 0);
+  assert(strcmp(fila, "60,,123.5,3,900,1.23,-5.50,45.67,123456,75,35,\n") == 0);
   formatearFila(fila, sizeof fila, m, 1700000000, "ventana");
-  assert(strcmp(fila, "60,1700000060,123.5,3,900,1.23,-5.50,45.67,1013.2,123456,75,35,ventana\n") == 0);
+  assert(strcmp(fila, "60,1700000060,123.5,3,900,1.23,-5.50,45.67,123456,75,35,ventana\n") == 0);
 
   int comas = 0;
   for (const char* p = CSV_CABECERA; *p; p++) comas += *p == ',';
-  assert(comas == 12); // 13 columnas en CSV Etapa 2 Confort
+  assert(comas == 11); // 12 columnas en CSV Etapa 2 Confort (sin presión)
 }
 
 static void testEtiquetas() {

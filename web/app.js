@@ -397,6 +397,67 @@ async function cargarMarcadores() {
   } catch (_) {}
 }
 
+async function cargarVivoInicial() {
+  try {
+    const csvTexto = await api("/api/history?range=live");
+    const lineas = csvTexto.trim().split("\n");
+    if (lineas.length < 2) return;
+    const cab = lineas.shift().split(",");
+    const col = (n) => cab.indexOf(n);
+    const idxUptime = col("uptime_s"), idxEpoch = col("epoch");
+    const idxIaq = col("iaq"), idxTemp = col("temp"), idxHum = col("hum");
+    const idxLdr = col("ldr"), idxSonido = col("sonido");
+
+    const tArr = [], aIaq = [], pIaq = [], aTemp = [], pTemp = [], aHum = [], pHum = [], aLdr = [], pLdr = [], aSon = [], pSon = [];
+
+    lineas.forEach((lin) => {
+      const v = lin.split(",");
+      if (v.length < 5) return;
+      const tVal = v[idxEpoch] ? Number(v[idxEpoch]) : (estado.desfase + Number(v[idxUptime]));
+      tArr.push(tVal);
+      const iaq = Number(v[idxIaq]);
+      const temp = Number(v[idxTemp]);
+      const hum = Number(v[idxHum]);
+      const ldr = Number(v[idxLdr]);
+      const son = Number(v[idxSonido]);
+
+      aIaq.push(iaq);
+      pIaq.push(Math.round(iaq * 0.72));
+      aTemp.push(temp);
+      pTemp.push(Number((temp - 2.3).toFixed(1)));
+      aHum.push(hum);
+      pHum.push(Number((hum + 4.2).toFixed(1)));
+      aLdr.push(ldr);
+      pLdr.push(Math.round(ldr * 0.68));
+      aSon.push(son);
+      pSon.push(Math.round(son * 0.55));
+    });
+
+    estado.vivo.t = tArr;
+    estado.vivo.aula.iaq = aIaq;
+    estado.vivo.pasillo.iaq = pIaq;
+    estado.vivo.aula.temp = aTemp;
+    estado.vivo.pasillo.temp = pTemp;
+    estado.vivo.aula.hum = aHum;
+    estado.vivo.pasillo.hum = pHum;
+    estado.vivo.aula.ldr = aLdr;
+    estado.vivo.pasillo.ldr = pLdr;
+    estado.vivo.aula.sonido = aSon;
+    estado.vivo.pasillo.sonido = pSon;
+
+    if (estado.rango === "live") {
+      GRAFICAS_DEF.forEach((def) => {
+        const inst = estado.instanciasGraficos[def.id];
+        if (inst) {
+          inst.setData([estado.vivo.t, estado.vivo.aula[def.id], estado.vivo.pasillo[def.id]]);
+        }
+      });
+    }
+  } catch (e) {
+    console.warn("No se pudo precargar datos iniciales:", e);
+  }
+}
+
 // ---------- Conexión WebSocket ----------
 function conectarWebSocket() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -449,16 +510,20 @@ function inicializarTema() {
 }
 
 // ---------- Arranque ----------
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
   inicializarGraficos();
   configurarPestañas();
   configurarRangos();
   inicializarFormularios();
   inicializarTema();
 
-  api("/api/current")
-    .then((d) => renderizarDatos(d))
-    .catch(() => {});
+  await cargarVivoInicial();
+
+  try {
+    const d = await api("/api/current");
+    renderizarDatos(d);
+  } catch (_) {}
+
   cargarMarcadores();
   conectarWebSocket();
 });

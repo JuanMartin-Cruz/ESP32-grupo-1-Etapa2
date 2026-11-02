@@ -15,7 +15,7 @@
 #endif
 
 // ---------------- Pines (Válidos en placas ESP32 DevKit de 30 y 38 pines) ----------------
-// I2C para sensor Bosch BME680 (Calidad de aire, Temperatura, Humedad, Presión)
+// I2C para sensor Bosch BME680 (Calidad de aire, Temperatura, Humedad)
 constexpr uint8_t PIN_SDA = 21;
 constexpr uint8_t PIN_SCL = 22;
 constexpr uint8_t BME680_ADDR = 0x76; // SDO a GND (0x77 si SDO a 3V3)
@@ -24,14 +24,12 @@ constexpr uint8_t BME680_ADDR = 0x76; // SDO a GND (0x77 si SDO a 3V3)
 // Conectado obligatoriamente a ADC1 (GPIO 32–39) porque ADC2 se inhabilita con Wi-Fi
 constexpr uint8_t PIN_LDR = 34;       // ADC1_CH6 (solo entrada, sin strapping)
 
-// Sensor de sonido digital KY-002 (Confort acústico)
-// Muestreo a alta velocidad (kHz) mediante interrupción de hardware
+// Sensor de sonido digital KY-037 / KY-002 (Confort acústico)
+// Muestreo a alta velocidad (kHz) mediante interrupción de hardware en pin digital DO
 constexpr uint8_t PIN_SONIDO = 25;    // GPIO 25 con soporte de interrupción
 
-// Pulsador táctil (para marcadores de eventos en el historial)
-constexpr uint8_t PIN_BOTON = 33;     // a GND, con INPUT_PULLUP
-
-// NOTA: Se descartaron los LEDs (GPIO 25, 26, 27) y el Buzzer (GPIO 32) de la Etapa 1.
+// NOTA: En la Etapa 2 se descartaron los LEDs, el Buzzer y el pulsador físico.
+// Los marcadores de eventos se gestionan directamente desde el dashboard web.
 
 // ---------------- Calibración y offsets ----------------
 constexpr float TEMP_OFFSET_C = 0.0f;
