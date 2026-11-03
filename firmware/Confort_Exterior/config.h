@@ -3,7 +3,7 @@
 #include <Arduino.h>
 
 // ---------------- Pines de Sensores (ESP32 DevKit) ----------------
-// Sensor DHT22 (Temperatura y Humedad)
+// Sensor DHT11 (Temperatura y Humedad)
 constexpr uint8_t PIN_DHT = 14;       // Pin digital con pullup
 
 // Sensor de gases MQ-135 (Calidad de aire / CO2 / gases) en ADC1

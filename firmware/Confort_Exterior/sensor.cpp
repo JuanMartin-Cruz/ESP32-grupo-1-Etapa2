@@ -1,10 +1,10 @@
-// sensor.cpp — Lectura de sensores del Nodo Exterior: DHT22 + MQ-135 + LDR + KY-037
+// sensor.cpp — Lectura de sensores del Nodo Exterior: DHT11 + MQ-135 + LDR + KY-037
 #include <Arduino.h>
 #include "config.h"
-#include "dht22.h"
+#include "dht11.h"
 #include "sensor.h"
 
-static DHT22 dht(PIN_DHT);
+static DHT11 dht(PIN_DHT);
 static volatile uint32_t pulsosSubVentana = 0;
 static uint32_t ultimoMuestreoSonido = 0;
 static uint32_t ultimoMuestreoCompleto = 0;
@@ -84,7 +84,7 @@ bool sensorIniciar() {
   ultima.acc = 3;
   ultima.conectado = true;
 
-  Serial.println(F("# Sensores del Nodo Exterior inicializados (DHT22, MQ-135, LDR, KY-037)"));
+  Serial.println(F("# Sensores del Nodo Exterior inicializados (DHT11, MQ-135, LDR, KY-037)"));
   return true;
 }
 
@@ -100,7 +100,7 @@ bool sensorActualizar(LecturaExterior& out) {
   // 2. Muestreo de Gases con MQ-135
   leerMq135(ultima.iaq, ultima.gas);
 
-  // 3. Muestreo de Temperatura y Humedad con DHT22
+  // 3. Muestreo de Temperatura y Humedad con DHT11
   float t = 0.0f, h = 0.0f;
   if (dht.leer(t, h)) {
     ultima.temp = t;

@@ -1,4 +1,4 @@
-// Confort_Exterior.ino — Nodo Exterior: DHT22 + MQ-135 + LDR + KY-037
+// Confort_Exterior.ino — Nodo Exterior: DHT11 + MQ-135 + LDR + KY-037
 // Transmisor cliente HTTP hacia el Nodo Interior (Confort_Interior)
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -40,7 +40,7 @@ void setup() {
 
   Serial.println(F("\n========================================================"));
   Serial.println(F("# SISTEMA DE CONFORT AMBIENTAL — NODO EXTERIOR"));
-  Serial.println(F("# Sensores: DHT22 (Temp/Hum) + MQ-135 (Gas) + LDR + KY-037"));
+  Serial.println(F("# Sensores: DHT11 (Temp/Hum) + MQ-135 (Gas) + LDR + KY-037"));
   Serial.println(F("========================================================\n"));
 
   sensorIniciar();

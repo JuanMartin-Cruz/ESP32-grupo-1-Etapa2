@@ -23,7 +23,7 @@ El sistema fue concebido para comparar dinámicamente dos entornos vinculados:
 
 La arquitectura se compone de **dos módulos ESP32 dedicados e independientes**:
 1. **Nodo Interior (`Confort_Interior`):** Concentrador central, servidor web y punto de acceso Wi-Fi. Mide las 5 variables de confort del recinto interno mediante un sensor ambiental **BME680**, un módulo **LDR** y un micrófono **KY-037**.
-2. **Nodo Exterior (`Confort_Exterior`):** Nodo periférico transmisor. Mide las 5 variables de referencia en el exterior/pasillo mediante un sensor **DHT22** (temperatura y humedad), un sensor de gases **MQ-135** (calidad de aire), un módulo **LDR** y un micrófono **KY-037**.
+2. **Nodo Exterior (`Confort_Exterior`):** Nodo periférico transmisor. Mide las 5 variables de referencia en el exterior/pasillo mediante un sensor **DHT11** (temperatura y humedad), un sensor de gases **MQ-135** (calidad de aire), un módulo **LDR** y un micrófono **KY-037**.
 
 Ambos nodos transmiten sus lecturas para presentarlas en un **dashboard web comparativo en tiempo real** servido localmente por el ESP32 Interior.
 
@@ -43,7 +43,7 @@ flowchart LR
 
     subgraph EXT["🚪 NODO EXTERIOR (Confort_Exterior)"]
         ESP2["ESP32 DevKit V1<br/>Cliente HTTP Transmisor"]
-        DHT["DHT22 (GPIO 14)<br/>Temperatura y Humedad"]
+        DHT["DHT11 (GPIO 14)<br/>Temperatura y Humedad"]
         MQ["MQ-135 (ADC1 GPIO 35)<br/>Gases / Calidad de aire"]
         LDR2["Módulo LDR (ADC1 GPIO 34)<br/>Iluminación exterior"]
         SON2["KY-037 Digital (GPIO 25)<br/>Muestreo alta velocidad (kHz)"]
@@ -80,8 +80,8 @@ flowchart LR
 | Magnitud | Sensor Nodo Interior | Sensor Nodo Exterior | Unidad / Rango | Relevancia de Confort |
 | :--- | :--- | :--- | :---: | :--- |
 | **Calidad de Aire / Gases** | Bosch BME680 (Gas MOX) | Hanwei MQ-135 (Gas SnO₂) | 0–500 IAQ / kΩ | Ventilación, presencia de COV y pureza respirable. |
-| **Confort Térmico** | Bosch BME680 | Aosong DHT22 / AM2302 | °C | Sensación térmica, balance y gradiente $\Delta T$. |
-| **Confort Higrométrico** | Bosch BME680 | Aosong DHT22 / AM2302 | % HR (0–100) | Humedad relativa óptima de permanencia (35–60 %). |
+| **Confort Térmico** | Bosch BME680 | DHT11 | °C | Sensación térmica, balance y gradiente $\Delta T$. |
+| **Confort Higrométrico** | Bosch BME680 | DHT11 | % HR (0–100) | Humedad relativa óptima de permanencia (35–60 %). |
 | **Confort Lumínico** | Módulo LDR (fotorresistencia) | Módulo LDR (fotorresistencia) | % Luz (0–100) | Nivel visual adecuado para trabajo/estudio vs. exterior. |
 | **Confort Acústico** | Módulo KY-037 (salida DO) | Módulo KY-037 (salida DO) | % Ruido (0–100) | Detección de bullicio e impacto sonoro en tiempo real. |
 
@@ -117,8 +117,8 @@ El sensor KY-037 utilizado toma su lectura desde el pin **DO (salida digital del
 
 | Señal | Pin ESP32 | Tipo | Función / Conexión |
 | :--- | :--- | :--- | :--- |
-| **DHT22 VCC / GND** | **3V3 / GND** | Alimentación | Alimentación del sensor térmico e higrométrico |
-| **DHT22 DATA** | **GPIO 14** | Entrada Digital | Bus digital 1-wire con driver de precisión sin dependencias |
+| **DHT11 VCC / GND** | **3V3 / GND** | Alimentación | Alimentación del sensor térmico e higrométrico |
+| **DHT11 DATA** | **GPIO 14** | Entrada Digital | Bus digital 1-wire con driver de precisión sin dependencias |
 | **MQ-135 VCC / GND** | **5V (VIN) / GND** | Alimentación | 5 V requerido para el calefactor del sensor de gas |
 | **MQ-135 (Salida AO)** | **GPIO 35** | Entrada Analógica | Conectado a **ADC1_CH7** (lectura estable con Wi-Fi) |
 | **LDR (Salida analógica AO)** | **GPIO 34** | Entrada Analógica | Conectado a **ADC1_CH6** (lectura estable con Wi-Fi) |
@@ -130,7 +130,7 @@ El sensor KY-037 utilizado toma su lectura desde el pin **DO (salida digital del
 
 * **Estructura de Firmware:**
   * `firmware/Confort_Interior/`: Contiene el sketch principal, servidor web asíncrono (`ESPAsyncWebServer`), WebSocket, NVS, buffer circular de telemetría y generador de CSV.
-  * `firmware/Confort_Exterior/`: Contiene el sketch emisor ligero, cliente HTTP (`HTTPClient`) y drivers directos de muestreo sin librerías externas para DHT22 y MQ-135.
+  * `firmware/Confort_Exterior/`: Contiene el sketch emisor ligero, cliente HTTP (`HTTPClient`) y drivers directos de muestreo sin librerías externas para DHT11 y MQ-135.
 * **Punto de Acceso Autónomo (Modo AP):**
   * El Nodo Interior levanta el punto de acceso Wi-Fi:
     * **SSID:** `Confort_Interior`
@@ -170,7 +170,7 @@ Tanto `firmware/Confort_Interior/secrets.example.h` como `firmware/Confort_Exter
 1. Abrir Arduino IDE.
 2. Abrir el archivo `firmware/Confort_Exterior/Confort_Exterior.ino`.
 3. Seleccionar el segundo ESP32.
-4. Conectar el ESP32 del exterior mediante USB y hacer clic en **Subir** *(no requiere bibliotecas externas para el DHT22, su driver está embebido en el proyecto)*.
+4. Conectar el ESP32 del exterior mediante USB y hacer clic en **Subir** *(no requiere bibliotecas externas para el DHT11, su driver está embebido en el proyecto)*.
 
 #### Paso 4: Visualizar el Dashboard
 1. Conectar la computadora, tablet o teléfono a la red Wi-Fi `Confort_Interior` (clave `confort1234`) o a la red compartida configurada.

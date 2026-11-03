@@ -1,17 +1,25 @@
-// dht22.cpp — Lector de pulsos digitales a microsegundos para sensor DHT22 (AM2302)
-#include "dht22.h"
+// dht11.cpp — Lector digital a microsegundos para sensor DHT11
+#include "dht11.h"
 
-void DHT22::begin() {
+void DHT11::begin() {
   pinMode(_pin, INPUT_PULLUP);
 }
 
-bool DHT22::leer(float& temperatura, float& humedad) {
+bool DHT11::leer(float& temperatura, float& humedad) {
+  // Evitar leer el DHT11 con una frecuencia mayor a 1 lectura por segundo
+  uint32_t ahora = millis();
+  if (_ultimoExito != 0 && (ahora - _ultimoExito < 1000)) {
+    temperatura = _ultimaTemp;
+    humedad = _ultimaHum;
+    return true;
+  }
+
   uint8_t datos[5] = {0, 0, 0, 0, 0};
 
-  // 1. Pulso de inicio: host baja la línea 18 ms
+  // 1. Pulso de inicio: host baja la línea entre 18 y 20 ms (requerido por DHT11)
   pinMode(_pin, OUTPUT);
   digitalWrite(_pin, LOW);
-  delay(18);
+  delay(20);
   digitalWrite(_pin, HIGH);
   delayMicroseconds(30);
   pinMode(_pin, INPUT_PULLUP);
@@ -30,7 +38,7 @@ bool DHT22::leer(float& temperatura, float& humedad) {
     if (micros() - inicio > 100) return false;
   }
 
-  // 3. Leer los 40 bits
+  // 3. Leer los 40 bits con sección crítica
   portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
   portENTER_CRITICAL(&mux);
 
@@ -58,16 +66,18 @@ bool DHT22::leer(float& temperatura, float& humedad) {
     return false;
   }
 
-  // 5. Conversión de magnitudes
-  float h = ((datos[0] << 8) | datos[1]) * 0.1f;
-  int16_t rawT = ((datos[2] & 0x7F) << 8) | datos[3];
-  if (datos[2] & 0x80) rawT = -rawT;
-  float t = rawT * 0.1f;
+  // 5. Conversión de magnitudes específica para DHT11:
+  // Byte 0: Humedad entera, Byte 1: Humedad decimal
+  // Byte 2: Temp entera, Byte 3: Temp decimal
+  float h = (float)datos[0] + (float)datos[1] * 0.1f;
+  float t = (float)datos[2] + (float)(datos[3] & 0x7F) * 0.1f;
+  if (datos[3] & 0x80) t = -t;
 
-  if (h >= 0.0f && h <= 100.0f && t >= -40.0f && t <= 80.0f) {
+  // Validación de rango típico de DHT11 (0 a 50 °C, 20 a 95 % HR)
+  if (h >= 5.0f && h <= 100.0f && t >= -10.0f && t <= 60.0f) {
     _ultimaTemp = t;
     _ultimaHum = h;
-    _ultimoExito = millis();
+    _ultimoExito = ahora;
     temperatura = t;
     humedad = h;
     return true;
