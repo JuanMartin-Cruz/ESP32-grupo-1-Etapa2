@@ -16,6 +16,22 @@
 #include "secrets.example.h"
 #endif
 
+#ifndef WIFI_SSID
+#define WIFI_SSID ""
+#endif
+
+#ifndef WIFI_PASS
+#define WIFI_PASS ""
+#endif
+
+#ifndef AP_SSID
+#define AP_SSID "Confort_Interior"
+#endif
+
+#ifndef AP_PASS
+#define AP_PASS "confort1234"
+#endif
+
 enum class ModoWifi { CONECTANDO, STA, AP };
 static ModoWifi modo = ModoWifi::CONECTANDO;
 static uint32_t inicioWifi = 0, ultimaLimpieza = 0;
@@ -238,8 +254,8 @@ static void iniciarServicios() {
 }
 
 void webIniciar() {
-  if (strcmp(WIFI_SSID, "nombre-de-tu-red") == 0) {
-    Serial.println(F("# Sin red Wi-Fi: Iniciando Punto de Acceso propio..."));
+  if (strlen(WIFI_SSID) == 0 || strcmp(WIFI_SSID, "nombre-de-tu-red") == 0) {
+    Serial.println(F("# Sin red Wi-Fi configurada: Iniciando Punto de Acceso propio..."));
     WiFi.mode(WIFI_AP);
     delay(100);
     WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));

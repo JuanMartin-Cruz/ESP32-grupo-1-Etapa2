@@ -362,8 +362,6 @@ function cargarHistorialCsv(texto) {
   if (estado.instanciasGraficos.sonido) estado.instanciasGraficos.sonido.setData([tArr, sonidoArr, sonidoArr.map(x => x * 0.6)]);
 }
 
-}
-
 async function cargarVivoInicial() {
   try {
     const csvTexto = await api("/api/history?range=live");

@@ -12,6 +12,18 @@
 #include "secrets.example.h"
 #endif
 
+#ifndef WIFI_SSID
+#define WIFI_SSID "Confort_Interior"
+#endif
+
+#ifndef WIFI_PASS
+#define WIFI_PASS "confort1234"
+#endif
+
+#ifndef SERVER_URL
+#define SERVER_URL "http://192.168.4.1/api/nodo_remoto"
+#endif
+
 static uint32_t ultimoEnvioMs = 0;
 static uint32_t ultimoIntentoWifi = 0;
 
