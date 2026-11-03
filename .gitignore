@@ -1,4 +1,4 @@
-firmware/aire_iot/secrets.h
+firmware/**/secrets.h
 build/
 __pycache__/
 .DS_Store
