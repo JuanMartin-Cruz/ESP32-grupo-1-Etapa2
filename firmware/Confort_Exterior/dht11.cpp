@@ -1,11 +1,11 @@
-// dht22.cpp — Lector de pulsos digitales a microsegundos para sensor DHT22 (AM2302)
-#include "dht22.h"
+// dht11.cpp — Lector de pulsos digitales a microsegundos para sensor DHT11
+#include "dht11.h"
 
-void DHT22::begin() {
+void DHT11::begin() {
   pinMode(_pin, INPUT_PULLUP);
 }
 
-bool DHT22::leer(float& temperatura, float& humedad) {
+bool DHT11::leer(float& temperatura, float& humedad) {
   uint8_t datos[5] = {0, 0, 0, 0, 0};
 
   // 1. Pulso de inicio: host baja la línea 18 ms
@@ -58,23 +58,23 @@ bool DHT22::leer(float& temperatura, float& humedad) {
     return false;
   }
 
-  // 5. Conversión de magnitudes
-  float h = ((datos[0] << 8) | datos[1]) * 0.1f;
-  int16_t rawT = ((datos[2] & 0x7F) << 8) | datos[3];
-  if (datos[2] & 0x80) rawT = -rawT;
-  float t = rawT * 0.1f;
+  // 5. Conversión de magnitudes: el DHT11 envía un entero de 8 bits por
+  //    magnitud. Los bytes impares (datos[1] y datos[3]) son decimales que
+  //    este modelo no implementa y que los clones rellenan con basura, por
+  //    eso se ignoran.
+  const float h = datos[0];
+  const float t = datos[2];
 
-  if (h >= 0.0f && h <= 100.0f && t >= -40.0f && t <= 80.0f) {
-    _ultimaTemp = t;
-    _ultimaHum = h;
-    _ultimoExito = millis();
-    temperatura = t;
-    humedad = h;
-    return true;
+  if (h < 0.0f || h > 100.0f || t < 0.0f || t > 60.0f) {
+    temperatura = _ultimaTemp;
+    humedad = _ultimaHum;
+    return false;
   }
 
-  temperatura = _ultimaTemp;
-  humedad = _ultimaHum;
-  return false;
+  _ultimaTemp = t;
+  _ultimaHum = h;
+  _ultimoExito = millis();
+  temperatura = t;
+  humedad = h;
+  return true;
 }
-
