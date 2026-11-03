@@ -1,7 +1,7 @@
 // Tests nativos (en PC, sin ESP32) de la lógica pura del firmware (Etapa 2 - Confort).
-// Compilar y correr:
-//   g++ -std=c++17 -Wall -Wextra -I firmware/aire_iot tools/test_nativo.cpp \
-//       firmware/aire_iot/control.cpp firmware/aire_iot/muestras.cpp -o build/test_nativo && ./build/test_nativo
+// Compilar y correr en entornos con GCC/Clang:
+//   g++ -std=c++17 -Wall -Wextra -I firmware/Confort_Interior tools/test_nativo.cpp \
+//       firmware/Confort_Interior/control.cpp firmware/Confort_Interior/muestras.cpp -o build/test_nativo && ./build/test_nativo
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -104,26 +104,14 @@ static void testEmpaquetarYCsv() {
   assert(m.ldr == 75 && m.sonido == 35);
 
   char fila[200];
-  formatearFila(fila, sizeof fila, m, 0, "");
-  assert(strcmp(fila, "60,,123.5,3,900,1.23,-5.50,45.67,123456,75,35,\n") == 0);
-  formatearFila(fila, sizeof fila, m, 1700000000, "ventana");
-  assert(strcmp(fila, "60,1700000060,123.5,3,900,1.23,-5.50,45.67,123456,75,35,ventana\n") == 0);
+  formatearFila(fila, sizeof fila, m, 0);
+  assert(strcmp(fila, "60,,123.5,3,900,1.23,-5.50,45.67,123456,75,35\n") == 0);
+  formatearFila(fila, sizeof fila, m, 1700000000);
+  assert(strcmp(fila, "60,1700000060,123.5,3,900,1.23,-5.50,45.67,123456,75,35\n") == 0);
 
   int comas = 0;
   for (const char* p = CSV_CABECERA; *p; p++) comas += *p == ',';
-  assert(comas == 11); // 12 columnas en CSV Etapa 2 Confort (sin presión)
-}
-
-static void testEtiquetas() {
-  char e[24];
-  limpiarEtiqueta(e, sizeof e, "recreo, \"aula\"\nabierta");
-  assert(strchr(e, ',') == nullptr && strchr(e, '"') == nullptr && strchr(e, '\n') == nullptr);
-
-  Anillo<Marcador, 4> mk;
-  Marcador m1 = {125, 1, "recreo"};
-  mk.agregar(m1);
-  assert(strcmp(buscarEvento(mk, 120, 180), "recreo") == 0);
-  assert(strcmp(buscarEvento(mk, 180, 240), "") == 0);
+  assert(comas == 10); // 11 columnas en CSV Etapa 2 Confort (sin presión ni marcadores)
 }
 
 static void testPromedio() {
@@ -146,7 +134,6 @@ int main() {
   testSimular();
   testAnillo();
   testEmpaquetarYCsv();
-  testEtiquetas();
   testPromedio();
   puts("OK: Todos los tests nativos de Confort (Etapa 2) pasaron exitosamente!");
   return 0;

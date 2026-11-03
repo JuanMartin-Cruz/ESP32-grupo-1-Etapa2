@@ -194,11 +194,4 @@ input:focus-visible { outline: 2px solid var(--foco); }
 .equipo dl { margin: .5rem 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem 1.5rem; }
 .equipo dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 
-.eventos { margin-top: .75rem; display: grid; gap: 1rem; }
-.fila-form .grupo { display: flex; gap: .5rem; margin-top: .25rem; }
-.fila-form .grupo input { flex: 1; }
-.lista-eventos { list-style: none; margin: 0; padding: 0; max-height: 14rem; overflow: auto; }
-.lista-eventos li { display: flex; justify-content: space-between; padding: .35rem 0; border-top: 1px solid var(--regla); }
-.lista-eventos time { font-weight: 600; color: var(--traza-pasillo); }
-
 .pie { display: flex; gap: .75rem; flex-wrap: wrap; justify-content: space-between; padding-top: 1.5rem; }

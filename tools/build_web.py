@@ -15,7 +15,7 @@ import sys
 
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
 WEB = RAIZ / "web"
-SALIDA = RAIZ / "firmware" / "aire_iot" / "web_assets.h"
+SALIDA = RAIZ / "firmware" / "Confort_Interior" / "web_assets.h"
 
 
 def inlinear(html: str) -> str:

@@ -18,7 +18,7 @@ import time
 from collections import deque
 
 WEB = pathlib.Path(__file__).resolve().parent.parent / "web"
-CABECERA = "uptime_s,epoch,iaq,acc,eco2,bvoc,temp,hum,gas,ldr,sonido,evento"
+CABECERA = "uptime_s,epoch,iaq,acc,eco2,bvoc,temp,hum,gas,ldr,sonido"
 
 
 def simular(t: float, exterior: bool = False) -> dict:
@@ -143,11 +143,10 @@ class EquipoMock:
     def csv(self, filas, paso: int) -> str:
         lineas = [CABECERA]
         for f in filas:
-            ev = next((m["label"] for m in self.marcadores if f["t"] <= m["t"] < f["t"] + paso), "")
             lineas.append(
                 f'{f["t"]},{self.epoch_arranque + f["t"]},{f["iaq"]:.1f},{f["acc"]},'
                 f'{round(f["eco2"])},{f["bvoc"]:.2f},{f["temp"]:.2f},{f["hum"]:.2f},'
-                f'{round(f["gas"])},{round(f["ldr"])},{round(f["sonido"])},{ev}'
+                f'{round(f["gas"])},{round(f["ldr"])},{round(f["sonido"])}'
             )
         return "\n".join(lineas) + "\n"
 
@@ -191,22 +190,8 @@ def app(eq: EquipoMock):
         return web.Response(
             text=eq.csv(eq.historial, 60),
             content_type="text/csv",
-            headers={"Content-Disposition": 'attachment; filename="confort_aula_pasillo.csv"'},
+            headers={"Content-Disposition": 'attachment; filename="confort_interior_exterior.csv"'},
         )
-
-    @rutas.get("/api/markers")
-    async def markers(_):
-        return web.json_response(list(eq.marcadores))
-
-    @rutas.post("/api/marker")
-    async def marker(request):
-        d = await request.json()
-        label = str(d.get("label", "")).replace(",", " ").replace('"', " ").replace("\n", " ")[:23]
-        if not label:
-            return web.json_response({"error": "Falta la etiqueta (label)"}, status=400)
-        eq.marcadores.append({"id": eq.proximo_id, "t": int(eq.ahora()), "label": label})
-        eq.proximo_id += 1
-        return web.json_response({"id": eq.proximo_id - 1})
 
     async def muestreo(_app):
         async def bucle():

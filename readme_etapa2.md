@@ -1,5 +1,5 @@
 # UTN FRCU – Tecnologías para la Automatización ESP32 2026
-## Confort IoT Multi-Nodo (Etapa 2) — Monitoreo Comparativo Aula vs. Pasillo
+## Confort Multi-Nodo (Etapa 2) — Monitoreo Comparativo Ambiental Multi-Escenario
 
 ### Identificación del Proyecto (Etapa 2)
 * **Número de equipo:** 9
@@ -8,124 +8,172 @@
   * Nuñez Baccón, Victoria
   * Valli, Franco Ignacio
 * **Proyecto recibido de Etapa 1:** Aire IoT (Monitor mononodo interior con BME680, LEDs y buzzer).
+* **Nuevo nombre del sistema:** `confort`
+
+---
 
 ### Descripción del Proyecto y Enfoque de Confort
 
-En la **Etapa 2**, el proyecto cambia de enfoque: deja de ser un monitor centrado exclusivamente en el aire y la ventilación para convertirse en una **plataforma integral de análisis y monitoreo de confort ambiental y ergonómico**.
+En la **Etapa 2**, el proyecto evoluciona de un simple monitor de aire interior a una **plataforma modular y distribuida de monitoreo y análisis de confort ambiental multi-escenario**.
 
-El sistema utiliza **dos módulos ESP32 interconectados** que comparan las condiciones ambientales entre dos recintos:
-1. **Nodo Interior (Aula):** Mide el nivel de confort térmico, higrométrico, visual, acústico y calidad de aire dentro del aula.
-2. **Nodo Exterior (Pasillo de la facultad):** Mide simultáneamente las mismas 5 variables de referencia en el pasillo adyacente.
+El sistema fue concebido para comparar dinámicamente dos entornos vinculados:
+* **Ámbito Académico:** Aula de clases vs. Pasillo de la facultad.
+* **Ámbito Residencial:** Interior del hogar (dormitorio/sala) vs. Balcón o pasillo común.
+* **Ámbito Gastronómico / Comercial:** Salón de clientes (hamburguesería, bar) vs. Vereda / exterior.
 
-Ambos nodos capturan 5 magnitudes de confort y sincronizan sus lecturas a través de la red local para presentarlas en un **dashboard web comparativo en tiempo real**.
+La arquitectura se compone de **dos módulos ESP32 dedicados e independientes**:
+1. **Nodo Interior (`Confort_Interior`):** Concentrador central, servidor web y punto de acceso Wi-Fi. Mide las 5 variables de confort del recinto interno mediante un sensor ambiental **BME680**, un módulo **LDR** y un micrófono **KY-037**.
+2. **Nodo Exterior (`Confort_Exterior`):** Nodo periférico transmisor. Mide las 5 variables de referencia en el exterior/pasillo mediante un sensor **DHT22** (temperatura y humedad), un sensor de gases **MQ-135** (calidad de aire), un módulo **LDR** y un micrófono **KY-037**.
+
+Ambos nodos transmiten sus lecturas para presentarlas en un **dashboard web comparativo en tiempo real** servido localmente por el ESP32 Interior.
+
+> **Resiliencia y Modo Autónomo:** Si el Nodo Exterior se encuentra apagado o fuera de alcance, el Nodo Interior opera normalmente de forma autónoma. El dashboard visualiza al 100 % las variables internas y marca el exterior como "Sin señal (Solo Interior)", evitando bloqueos o cálculos erróneos contra cero.
 
 ```mermaid
 flowchart LR
-    subgraph AULA["🏫 NODO INTERIOR (Aula)"]
-        ESP1["ESP32 DevKit V1<br/>Nodo Aula (Servidor / Concentrador)"]
-        BME1["BME680 (I2C)<br/>IAQ, Temp, Humedad"]
-        LDR1["Módulo LDR (ADC1)<br/>Iluminación del aula"]
-        SON1["KY-037 / KY-002 (Digital DO)<br/>Muestreo a alta velocidad"]
+    subgraph INT["🏠 NODO INTERIOR (Confort_Interior)"]
+        ESP1["ESP32 DevKit V1<br/>Servidor Web + AP Confort_Interior"]
+        BME1["Bosch BME680 (I2C)<br/>IAQ / Gases, Temp, Humedad"]
+        LDR1["Módulo LDR (ADC1 GPIO 34)<br/>Iluminación interior"]
+        SON1["KY-037 Digital (GPIO 25)<br/>Muestreo alta velocidad (kHz)"]
         BME1 --> ESP1
         LDR1 --> ESP1
         SON1 --> ESP1
     end
 
-    subgraph PASILLO["🚪 NODO EXTERIOR (Pasillo)"]
-        ESP2["ESP32 DevKit V1<br/>Nodo Pasillo (Remoto)"]
-        BME2["BME680 (I2C)<br/>IAQ, Temp, Humedad"]
-        LDR2["Módulo LDR (ADC1)<br/>Iluminación del pasillo"]
-        SON2["KY-037 / KY-002 (Digital DO)<br/>Muestreo a alta velocidad"]
-        BME2 --> ESP2
+    subgraph EXT["🚪 NODO EXTERIOR (Confort_Exterior)"]
+        ESP2["ESP32 DevKit V1<br/>Cliente HTTP Transmisor"]
+        DHT["DHT22 (GPIO 14)<br/>Temperatura y Humedad"]
+        MQ["MQ-135 (ADC1 GPIO 35)<br/>Gases / Calidad de aire"]
+        LDR2["Módulo LDR (ADC1 GPIO 34)<br/>Iluminación exterior"]
+        SON2["KY-037 Digital (GPIO 25)<br/>Muestreo alta velocidad (kHz)"]
+        DHT --> ESP2
+        MQ --> ESP2
         LDR2 --> ESP2
         SON2 --> ESP2
     end
 
     subgraph DASHBOARD["💻 DASHBOARD WEB DE CONFORT"]
-        PANEL["Visualización Comparativa en Tiempo Real<br/>• 5 Gráficas Comparativas: IAQ, Temp, Hum, Luz, Ruido<br/>• Tarjetas de Confort con gradientes Δ<br/>• Registro Histórico y CSV"]
+        PANEL["Panel Web Interactivo en Tiempo Real<br/>• 5 Gráficas Comparativas: IAQ, Temp, Hum, Luz, Ruido<br/>• Tarjetas métricas con gradientes Δ (Interior vs Exterior)<br/>• Exportación de telemetría CSV"]
     end
 
-    ESP2 -- Wi-Fi / API REST /api/nodo_remoto --> ESP1
-    ESP1 <== WebSocket / HTTP ==> PANEL
+    ESP2 -- "Wi-Fi HTTP POST /api/nodo_remoto (cada 1s)" --> ESP1
+    ESP1 <== "WebSocket / HTTP" ==> PANEL
 ```
 
 ![Dashboard de Confort Multi-Nodo](docs/img/dashboard.png)
 
-### Componentes Descartados del Proyecto Original
+---
 
-* **LEDs de colores (verde, amarillo, rojo):** Se descartan. La señalización mediante LEDs discretos resulta innecesaria y queda superada por la visualización centralizada en el panel web.
-* **Buzzer pasivo KY-006 (alarma sonora):** Se descarta. Las alarmas sonoras intermitentes resultan disruptivas en un aula universitaria; la supervisión se realiza visualmente mediante las métricas del dashboard.
-* **Matriz de Decisión de Ventilación:** Se descartó la lógica de recomendación de apertura de puertas/ventanas para enfocar el sistema exclusivamente en la **comparación analítica y visual de las 5 variables de confort**.
+### Componentes y Lógicas Descartadas del Proyecto Original
+
+1. **LEDs discretos de colores (verde, amarillo, rojo):** Se descartan. La señalización física resulta redundante frente al panel web responsivo accesible desde cualquier dispositivo móvil o PC.
+2. **Buzzer pasivo KY-006 (alarma sonora):** Se descarta. Las alertas acústicas resultan disruptivas e indeseables en entornos de estudio o trabajo; la supervisión es completamente visual.
+3. **Registro de eventos y marcadores manuales:** Se eliminan de la interfaz y del firmware para centrar el sistema de forma limpia en la adquisición continua de telemetría ambiental sin fricción para el usuario.
+4. **Matriz de Decisión de Ventilación:** Se descartó la prescripción rígida de apertura de ventanas; el sistema proporciona la analítica visual comparativa para que los usuarios tomen decisiones informadas según el contexto.
+5. **Firmware unificado por roles (`NODO_ROL`):** Se eliminó el firmware monolítico con `#define ROL_AULA / ROL_PASILLO`. Cada placa cuenta ahora con su propio proyecto de firmware optimizado según los sensores físicos conectados (`firmware/Confort_Interior` y `firmware/Confort_Exterior`).
+
+---
 
 ### Las 5 Variables de Confort Analizadas
 
-El panel web unificado grafica y compara simultáneamente en tiempo real:
+| Magnitud | Sensor Nodo Interior | Sensor Nodo Exterior | Unidad / Rango | Relevancia de Confort |
+| :--- | :--- | :--- | :---: | :--- |
+| **Calidad de Aire / Gases** | Bosch BME680 (Gas MOX) | Hanwei MQ-135 (Gas SnO₂) | 0–500 IAQ / kΩ | Ventilación, presencia de COV y pureza respirable. |
+| **Confort Térmico** | Bosch BME680 | Aosong DHT22 / AM2302 | °C | Sensación térmica, balance y gradiente $\Delta T$. |
+| **Confort Higrométrico** | Bosch BME680 | Aosong DHT22 / AM2302 | % HR (0–100) | Humedad relativa óptima de permanencia (35–60 %). |
+| **Confort Lumínico** | Módulo LDR (fotorresistencia) | Módulo LDR (fotorresistencia) | % Luz (0–100) | Nivel visual adecuado para trabajo/estudio vs. exterior. |
+| **Confort Acústico** | Módulo KY-037 (salida DO) | Módulo KY-037 (salida DO) | % Ruido (0–100) | Detección de bullicio e impacto sonoro en tiempo real. |
 
-1. **Calidad de Aire (IAQ):** Salubridad del aire respirable (0–500) según Bosch BSEC2.
-2. **Confort Térmico (Temperatura en °C):** Sensación térmica y gradiente de temperatura entre el aula y el pasillo.
-3. **Confort Higrométrico (Humedad Relativa en %):** Nivel de humedad óptimo para estudio y permanencia (35–60 % HR).
-4. **Confort Lumínico / Visual (LDR en %):** Nivel de iluminación adecuada para lectura y uso de pantallas vs. luz natural del pasillo.
-5. **Confort Acústico (Ruido Digital KY-002 en %):** Nivel de silencio y bullicio en el aula frente al ruido y circulación de personas en el pasillo.
+---
 
-### Desafío de Ingeniería: Muestreo del Sensor Digital de Sonido (KY-002)
+### Desafío de Ingeniería: Muestreo del Sensor Digital de Sonido (KY-037)
 
-El sensor KY-002 opera como un **dispositivo digital de conmutación / vibración** basado en comparador, no como un micrófono analógico de tensión continua. Ante perturbaciones acústicas o vibratorias que superan el umbral del potenciómetro, conmuta rápidamente a nivel activo mediante pulsos de microsegundos a milisegundos.
+El sensor KY-037 utilizado toma su lectura desde el pin **DO (salida digital del comparador LM393)**:
+* Cuando las ondas sonoras superan el umbral ajustado con el potenciómetro multivuelta, el comparador bascula generando trenes de pulsos rápidos de microsegundos a milisegundos.
+* Una lectura tradicional por sondeo (`digitalRead`) cada 1 o 3 segundos perdería más del 99 % de los eventos acústicos.
+* **Solución implementada:** Se configura una interrupción por hardware (`attachInterrupt` con flanco `CHANGE`) alojada en la memoria RAM ultra-rápida (`IRAM_ATTR`). El microcontrolador cuenta cada transición en frecuencias de kHz y calcula la tasa de pulsos en ventanas de integración de 1 segundo:
+  $$\text{Frecuencia (Hz)} = \frac{\text{pulsos} \times 1000}{\Delta t_{\text{ms}}}$$
+  $$\text{Ruido (\%)} = \min\left(100, \frac{\text{Frecuencia}}{300} \times 100\right)$$
 
-Si se realizara una lectura convencional cada 3 segundos, se perdería más del 99 % de los eventos acústicos. Por ello, el firmware implementa:
-* **Muestreo a alta velocidad por interrupción de hardware:** Un conteo continuo a frecuencia de kHz (`attachInterrupt` por flanco `CHANGE`) acumulado en ventanas temporales de integración de 1 segundo.
-* **Métricas calculadas:**
-  * **Densidad de pulsos (Hz):** Frecuencia de transiciones por segundo.
-  * **Índice de actividad sonora (0–100 %):** Proporción de actividad normalizada y filtrada digitalmente, permitiendo una comparación directa de confort acústico entre el aula y el pasillo.
+---
 
-### Componentes Utilizados (Hardware para los 2 Nodos)
+### Asignación de Pines y Cableado
 
-| Componente | Cantidad | Función en el sistema |
-| :--- | :---: | :--- |
-| **ESP32 DevKit V1** | 2 | Microcontroladores principales (Nodo Aula y Nodo Pasillo). |
-| **Bosch BME680 (I2C)** | 2 | Calidad de aire (IAQ, CO₂, VOC), Temperatura y Humedad relativa. |
-| **Módulos Fotorresistores LDR** | 2 | Medición analógica de iluminación ambiente conectada a **ADC1**. |
-| **Micrófonos KY-037 / KY-002** | 2 | Detección digital de actividad sonora (pin DO) con muestreo a alta velocidad. |
-| **Protoboards y jumpers** | 2 sets | Montaje físico independiente de cada nodo. |
-| **Cables de alimentación USB** | 2 | Alimentación de 5 V para ambos microcontroladores. |
+> **Regla Crítica de Diseño en ESP32:** El conversor analógico-digital interno **ADC2** queda completamente deshabilitado e inutilizable cuando el módem Wi-Fi se encuentra activo. Por esta razón, **todos los sensores analógicos (LDR y MQ-135) se conectan estrictamente a pines de ADC1 (GPIO 32 a 39)**.
 
-### Asignación de Pines y Cableado (Idéntico en Ambos Nodos)
+#### 1. Cableado Nodo Interior (`firmware/Confort_Interior`)
 
-> **Regla de diseño ADC en ESP32:** El conversor ADC2 queda bloqueado cuando el Wi-Fi transmite. Por esta razón, el sensor analógico LDR se conecta obligatoriamente a un canal de **ADC1** (GPIO 34).
-
-| Señal | Pin ESP32 | Tipo | Función |
+| Señal | Pin ESP32 | Tipo | Función / Conexión |
 | :--- | :--- | :--- | :--- |
-| **BME680 VCC / GND** | **3V3 / GND** | Alimentación | 3.3 V regulado (nunca 5 V) |
-| **BME680 SDA / SCL** | **GPIO 21 / GPIO 22** | Digital I2C | Bus I2C de hardware |
-| **BME680 SDO** | **GND** | Configuración | Fija dirección I2C en `0x76` |
-| **BME680 CS** | **3V3** | Configuración | Fija el sensor en modo I2C |
-| **LDR (Salida analógica AO)** | **GPIO 34** | Entrada Analógica | Conectado a **ADC1_CH6** (compatible con Wi-Fi) |
-| **KY-037 / KY-002 (Salida digital DO)** | **GPIO 25** | Entrada Digital | Pin con interrupción de hardware (muestreo a kHz) |
+| **BME680 VCC / GND** | **3V3 / GND** | Alimentación | 3.3 V regulado (alimentar solo con 3.3 V) |
+| **BME680 SDA / SCL** | **GPIO 21 / GPIO 22** | Digital I2C | Bus I2C principal (detección auto `0x76` o `0x77`) |
+| **BME680 SDO** | **GND** | Configuración | Fija dirección I2C en `0x76` (o 3V3 para `0x77`) |
+| **BME680 CS** | **3V3** | Configuración | Fija el sensor en modo I2C (no SPI) |
+| **LDR (Salida analógica AO)** | **GPIO 34** | Entrada Analógica | Conectado a **ADC1_CH6** (lectura estable con Wi-Fi) |
+| **KY-037 (Salida digital DO)** | **GPIO 25** | Entrada Digital | Pin con interrupción de hardware (`CHANGE`) |
 
-### Comunicación e Integración entre los Dos ESP32
+#### 2. Cableado Nodo Exterior (`firmware/Confort_Exterior`)
 
-Ambos módulos ejecutan el mismo firmware seleccionando su rol en tiempo de compilación o configuración (`ROL_AULA` o `ROL_PASILLO`):
+| Señal | Pin ESP32 | Tipo | Función / Conexión |
+| :--- | :--- | :--- | :--- |
+| **DHT22 VCC / GND** | **3V3 / GND** | Alimentación | Alimentación del sensor térmico e higrométrico |
+| **DHT22 DATA** | **GPIO 14** | Entrada Digital | Bus digital 1-wire con driver de precisión sin dependencias |
+| **MQ-135 VCC / GND** | **5V (VIN) / GND** | Alimentación | 5 V requerido para el calefactor del sensor de gas |
+| **MQ-135 (Salida AO)** | **GPIO 35** | Entrada Analógica | Conectado a **ADC1_CH7** (lectura estable con Wi-Fi) |
+| **LDR (Salida analógica AO)** | **GPIO 34** | Entrada Analógica | Conectado a **ADC1_CH6** (lectura estable con Wi-Fi) |
+| **KY-037 (Salida digital DO)** | **GPIO 25** | Entrada Digital | Pin con interrupción de hardware (`CHANGE`) |
 
-* **Red Wi-Fi común:** Ambos nodos se asocian a la red Wi-Fi local o institucional configurada en `secrets.h`.
-* **Modo Respaldo Autónomo (AP):** Si no hay Wi-Fi externo, el Nodo Aula crea el punto de acceso `AireIoT_Aula` (clave: `aire1234`), al cual el Nodo Pasillo se conecta automáticamente como estación.
-* **Transmisión de telemetría:** El Nodo Pasillo transmite periódicamente un paquete JSON con sus 5 variables hacia el Nodo Aula mediante el endpoint `/api/nodo_remoto`.
-* **Servidor Centralizado:** El Nodo Aula agrega los datos de ambos nodos, administra el historial combinado y sirve el dashboard web interactivo vía WebSocket y REST.
+---
 
-### Conceptos Teóricos Aplicados
+### Comunicación e Infraestructura de Red
 
-1. **Monitoreo Diferencial de Confort:**
-   El análisis comparativo simultáneo permite entender el comportamiento relativo del recinto frente a su entorno adyacente (gradiente térmico $\Delta T$, higrométrico $\Delta H$, acústico $\Delta \text{Ruido}$, lumínico $\Delta L$ y salubridad $\Delta IAQ$).
+* **Estructura de Firmware:**
+  * `firmware/Confort_Interior/`: Contiene el sketch principal, servidor web asíncrono (`ESPAsyncWebServer`), WebSocket, NVS, buffer circular de telemetría y generador de CSV.
+  * `firmware/Confort_Exterior/`: Contiene el sketch emisor ligero, cliente HTTP (`HTTPClient`) y drivers directos de muestreo sin librerías externas para DHT22 y MQ-135.
+* **Punto de Acceso Autónomo (Modo AP):**
+  * El Nodo Interior levanta el punto de acceso Wi-Fi:
+    * **SSID:** `Confort_Interior`
+    * **Contraseña:** `confort1234`
+    * **IP Servidor:** `192.168.4.1`
+* **Conexión Automática del Nodo Exterior:**
+  * El Nodo Exterior se asocia inmediatamente a dicho AP (o a una red Wi-Fi compartida configurada en `secrets.h`) y despacha un payload JSON cada 1 segundo:
+    ```json
+    {
+      "temp": 21.5,
+      "hum": 52.0,
+      "gas": 45.2,
+      "ldr": 58.0,
+      "sonido": 12.0
+    }
+    ```
+  * Endpoint receptor: `POST http://192.168.4.1/api/nodo_remoto`
 
-2. **Teoría de Muestreo de Señales Discretas (Nyquist / Ventana Estadística):**
-   Al tratar con pulsos acústicos transitorios de corta duración en el sensor digital KY-002, se aplica un muestreo a alta frecuencia (kHz) e integración temporal para derivar una magnitud de estado continua (nivel de ruido %).
-
-3. **Fusión Sensorial Multivariable:**
-   La integración coordinada de luz (LDR), sonido (KY-002) y calidad de aire (BME680) permite modelar la ocupación del aula y caracterizar el confort ambiental de forma integral.
+---
 
 ### Guía de Puesta en Marcha
 
-1. **Configurar el firmware para cada nodo:**
-   * En `firmware/aire_iot/config.h`:
-     * Para la placa del aula: `#define NODO_ROL ROL_AULA`
-     * Para la placa del pasillo: `#define NODO_ROL ROL_PASILLO`
-2. **Cargar el programa:** Flashear ambos ESP32 con el entorno Arduino IDE (core 3.3.12).
-3. **Acceder al Dashboard:** Conectar una PC o teléfono a la red y navegar a `http://aire.local` (o la IP asignada al Nodo Aula) para observar las 5 gráficas comparativas de confort en vivo.
+#### Paso 1: Configurar credenciales (Opcional)
+Tanto `firmware/Confort_Interior/secrets.example.h` como `firmware/Confort_Exterior/secrets.example.h` pueden copiarse a `secrets.h` para configurar el SSID y contraseña de una red Wi-Fi externa. De no hacerlo, el sistema opera de forma totalmente autónoma mediante el AP `Confort_Interior`.
+
+#### Paso 2: Flashear el Nodo Interior
+1. Abrir Arduino IDE.
+2. Abrir el archivo `firmware/Confort_Interior/Confort_Interior.ino`.
+3. Seleccionar la placa **ESP32 Dev Module** (o su modelo de ESP32).
+4. Instalar desde el Gestor de Bibliotecas:
+   * `Adafruit BME680 Library` (junto con `Adafruit Unified Sensor`).
+   * `ESPAsyncWebServer` y `AsyncTCP`.
+   * `ArduinoJson` (versión 6 o 7).
+5. Conectar el ESP32 del interior mediante USB y hacer clic en **Subir**.
+
+#### Paso 3: Flashear el Nodo Exterior
+1. Abrir Arduino IDE.
+2. Abrir el archivo `firmware/Confort_Exterior/Confort_Exterior.ino`.
+3. Seleccionar el segundo ESP32.
+4. Conectar el ESP32 del exterior mediante USB y hacer clic en **Subir** *(no requiere bibliotecas externas para el DHT22, su driver está embebido en el proyecto)*.
+
+#### Paso 4: Visualizar el Dashboard
+1. Conectar la computadora, tablet o teléfono a la red Wi-Fi `Confort_Interior` (clave `confort1234`) o a la red compartida configurada.
+2. Abrir el navegador e ingresar a:
+   * **`http://192.168.4.1`** (o `http://confort.local` si mDNS está activo).
+3. Se desplegará el dashboard con las 5 gráficas comparativas en tiempo real de temperatura, humedad, calidad de aire, luz y ruido acústico.

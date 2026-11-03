@@ -117,13 +117,13 @@ function crearGraficoComparativo(def, contElem) {
     series: [
       {},
       {
-        label: "Aula (Interior)",
+        label: "Interior",
         stroke: colorAula,
         width: 2,
         value: (u, v) => def.formato(v),
       },
       {
-        label: "Pasillo (Exterior)",
+        label: "Exterior",
         stroke: colorPasillo,
         width: 2,
         dash: [4, 3],
@@ -215,7 +215,7 @@ function renderizarDatos(d) {
   const pasilloOk = pasillo.conectado === true;
   badgePasillo.classList.toggle("online", pasilloOk);
   badgePasillo.classList.toggle("offline", !pasilloOk);
-  $("#pasillo-estado").textContent = pasilloOk ? "Conectado (En línea)" : "Sin señal (Solo Aula)";
+  $("#pasillo-estado").textContent = pasilloOk ? "Conectado (En línea)" : "Sin señal (Solo Interior)";
 
   // 2. Evaluación de Confort y Tarjetas
   const evalC = evaluarConfort(aula);
@@ -226,7 +226,7 @@ function renderizarDatos(d) {
   const bIaq = $("#estado-comp-iaq");
   bIaq.textContent = evalC.iaq.txt;
   bIaq.dataset.s = evalC.iaq.s;
-  $("#delta-iaq").textContent = pasilloOk ? fmtDelta(delta.iaq, " pts") : "— (solo Aula)";
+  $("#delta-iaq").textContent = pasilloOk ? fmtDelta(delta.iaq, " pts") : "— (solo Interior)";
 
   // Temperatura
   $("#val-aula-temp").textContent = fmtNum(aula.temp, 1);
@@ -234,7 +234,7 @@ function renderizarDatos(d) {
   const bTemp = $("#estado-comp-temp");
   bTemp.textContent = evalC.temp.txt;
   bTemp.dataset.s = evalC.temp.s;
-  $("#delta-temp").textContent = pasilloOk ? fmtDelta(delta.temp, " °C") : "— (solo Aula)";
+  $("#delta-temp").textContent = pasilloOk ? fmtDelta(delta.temp, " °C") : "— (solo Interior)";
 
   // Humedad
   $("#val-aula-hum").textContent = fmtNum(aula.hum, 0);
@@ -242,7 +242,7 @@ function renderizarDatos(d) {
   const bHum = $("#estado-comp-hum");
   bHum.textContent = evalC.hum.txt;
   bHum.dataset.s = evalC.hum.s;
-  $("#delta-hum").textContent = pasilloOk ? fmtDelta(delta.hum, " %") : "— (solo Aula)";
+  $("#delta-hum").textContent = pasilloOk ? fmtDelta(delta.hum, " %") : "— (solo Interior)";
 
   // Luz LDR
   $("#val-aula-ldr").textContent = fmtNum(aula.ldr, 0);
@@ -250,15 +250,15 @@ function renderizarDatos(d) {
   const bLdr = $("#estado-comp-ldr");
   bLdr.textContent = evalC.ldr.txt;
   bLdr.dataset.s = evalC.ldr.s;
-  $("#delta-ldr").textContent = pasilloOk ? fmtDelta(delta.ldr, " %") : "— (solo Aula)";
+  $("#delta-ldr").textContent = pasilloOk ? fmtDelta(delta.ldr, " %") : "— (solo Interior)";
 
-  // Ruido KY-002
+  // Ruido KY-037
   $("#val-aula-sonido").textContent = fmtNum(aula.sonido, 0);
   $("#val-pasillo-sonido").textContent = pasilloOk ? fmtNum(pasillo.sonido, 0) : "—";
   const bSon = $("#estado-comp-sonido");
   bSon.textContent = evalC.sonido.txt;
   bSon.dataset.s = evalC.sonido.s;
-  $("#delta-sonido").textContent = pasilloOk ? fmtDelta(delta.sonido, " %") : "— (solo Aula)";
+  $("#delta-sonido").textContent = pasilloOk ? fmtDelta(delta.sonido, " %") : "— (solo Interior)";
 
   // 3. Diagnóstico de Equipo
   if (d.equipo) {
@@ -362,39 +362,6 @@ function cargarHistorialCsv(texto) {
   if (estado.instanciasGraficos.sonido) estado.instanciasGraficos.sonido.setData([tArr, sonidoArr, sonidoArr.map(x => x * 0.6)]);
 }
 
-function inicializarFormularios() {
-  const formEvt = $("#form-evento");
-  if (formEvt) {
-    formEvt.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const inp = $("#evento-nuevo");
-      const label = inp.value.trim();
-      if (!label) return;
-      try {
-        await enviar("/api/marker", { label });
-        inp.value = "";
-        cargarMarcadores();
-      } catch (err) {
-        alert("Error al registrar evento: " + err.message);
-      }
-    });
-  }
-}
-
-async function cargarMarcadores() {
-  try {
-    const list = await api("/api/markers");
-    const ol = $("#lista-eventos");
-    if (!ol) return;
-    if (!list.length) {
-      ol.innerHTML = "<li style='color:var(--tinta-2)'>No hay eventos marcados aún.</li>";
-      return;
-    }
-    ol.innerHTML = list.map((m) => {
-      const horaStr = new Date((estado.desfase + m.t) * 1000).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
-      return `<li><time>${horaStr}</time> <span>${m.label}</span></li>`;
-    }).join("");
-  } catch (_) {}
 }
 
 async function cargarVivoInicial() {
@@ -514,7 +481,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   inicializarGraficos();
   configurarPestañas();
   configurarRangos();
-  inicializarFormularios();
   inicializarTema();
 
   await cargarVivoInicial();
@@ -524,6 +490,5 @@ window.addEventListener("DOMContentLoaded", async () => {
     renderizarDatos(d);
   } catch (_) {}
 
-  cargarMarcadores();
   conectarWebSocket();
 });
