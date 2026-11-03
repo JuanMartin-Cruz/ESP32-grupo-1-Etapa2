@@ -98,6 +98,36 @@ Ninguno de los dos nodos usa un índice normalizado de terceros: cada uno deriva
 
 > **Resolución de los sensores:** el **DHT11** entrega 1 °C y 1 % HR, mientras que el **BME680** del nodo interior resuelve 0.01 °C y 0.1 % HR. Las diferencias menores a una unidad están por debajo del poder de resolución del nodo exterior y no deben interpretarse como diferencias reales de temperatura o humedad.
 
+#### Calibración cruzada de sensores
+
+Como los dos nodos usan sensores distintos, sus lecturas no son comparables sin corregir: el DHT11 puede marcar 29 °C donde el BME680 mide 26 °C. El sistema corrige esa diferencia con una **calibración cruzada**, que se realiza con ambos nodos midiendo el mismo ambiente.
+
+**Procedimiento**
+
+1. Colocar los dos nodos juntos, en el mismo ambiente, y dejarlos estabilizar unos 2 minutos.
+2. `POST /api/calibracion/iniciar`
+3. Esperar a que `progreso` llegue a 100 (30 muestras ≈ 30 s con el exterior publicando cada 1 s).
+4. `POST /api/calibracion/aplicar`
+
+La corrección resultante es la media de `(interior − exterior)` sobre las muestras acumuladas, aplicada por separado a temperatura, humedad e IAQ. Queda guardada en la NVS del ESP32 Interior y sobrevive a los reinicios.
+
+| Endpoint | Método | Función |
+| :--- | :--- | :--- |
+| `/api/calibracion` | `GET` | Offsets vigentes, estado y progreso de la captura |
+| `/api/calibracion/iniciar` | `POST` | Arranca la captura (30 muestras) |
+| `/api/calibracion/aplicar` | `POST` | Calcula, aplica y persiste la corrección |
+| `/api/calibracion/reset` | `POST` | Borra la corrección (vuelve a valores crudos) |
+
+La corrección se aplica **en el Nodo Interior**, al recibir el payload del Exterior:
+
+```
+exterior_corregido = exterior_crudo + offset      (recortado a rango físico)
+```
+
+Ventaja de hacerlo ahí: se recalibra sin necesidad de reflashear el ESP32 exterior. El estado vigente también aparece en `/api/current`, dentro del objeto `calibracion`.
+
+> **Alcance de la corrección:** un offset corrige el **sesgo medio** entre dos sensores, no la forma de su curva. Es válido para comparar dentro del entorno y las condiciones donde se calibró. En el caso del IAQ es más delicado, porque el BME680 y el MQ-135 responden a principios químicos distintos (MOX vs SnO₂): el offset acerca los valores en ese punto de operación, pero no vuelve equivalentes a los dos sensores.
+
 ---
 
 ### Desafío de Ingeniería: Muestreo del Sensor Digital de Sonido (KY-037)
