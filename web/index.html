@@ -33,6 +33,8 @@
   Sin conexión con el nodo central. Reintentando reconectar…
 </p>
 
+<p class="info-calibracion" id="info-calibracion"></p>
+
 <main>
   <!-- 1. RESUMEN DE LAS 5 VARIABLES DE CONFORT -->
   <section class="seccion-comparativa">
@@ -163,6 +165,10 @@
   <!-- 2. SECCIÓN DE LAS 5 GRÁFICAS COMPARATIVAS -->
   <section class="graficas-seccion">
     <div class="barra-controles">
+      <label class="toggle-crudo" title="Muestra las lecturas del Exterior sin la corrección de calibración">
+        <input type="checkbox" id="ver-crudo">
+        Ver sin calibrar
+      </label>
       <div class="leyenda-graficas">
         <span><span class="muestra-traza aula"></span> Nodo Interior</span>
         <span><span class="muestra-traza pasillo"></span> Nodo Exterior</span>

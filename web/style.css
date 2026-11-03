@@ -94,6 +94,20 @@ h2 { font-size: 1.0625rem; margin-bottom: .5rem; }
   font-size: .9375rem;
 }
 
+.info-calibracion {
+  margin-top: .5rem;
+  font-size: .875rem;
+  color: var(--tinta-2);
+}
+
+.toggle-crudo {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-size: .875rem; color: var(--tinta-2); cursor: pointer;
+  user-select: none; white-space: nowrap;
+}
+
+.toggle-crudo input { accent-color: var(--traza-pasillo); }
+
 main { display: grid; gap: 1.5rem; margin-top: 1rem; }
 section { padding: 1.25rem 0; border-bottom: 1px solid var(--regla); min-width: 0; }
 

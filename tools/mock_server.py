@@ -94,6 +94,14 @@ class EquipoMock:
         aula = simular(t, exterior=False)
         pasillo = simular(t, exterior=True)
 
+        # Sesgo simulado del nodo exterior sin calibrar: el valor mostrado
+        # (pasillo) es el corregido, y pasillo_crudo es el que entrega el sensor.
+        correccion = {"temp": -2.0, "hum": 4.0, "iaq": -18.0}
+        pasillo_crudo = dict(pasillo)
+        pasillo_crudo["temp"] = pasillo["temp"] - correccion["temp"]
+        pasillo_crudo["hum"] = pasillo["hum"] - correccion["hum"]
+        pasillo_crudo["iaq"] = pasillo["iaq"] - correccion["iaq"]
+
         delta = {
             "iaq": aula["iaq"] - pasillo["iaq"],
             "temp": aula["temp"] - pasillo["temp"],
@@ -102,12 +110,29 @@ class EquipoMock:
             "sonido": aula["sonido"] - pasillo["sonido"],
         }
 
+        delta_crudo = {
+            "iaq": aula["iaq"] - pasillo_crudo["iaq"],
+            "temp": aula["temp"] - pasillo_crudo["temp"],
+            "hum": aula["hum"] - pasillo_crudo["hum"],
+            "ldr": aula["ldr"] - pasillo_crudo["ldr"],
+            "sonido": aula["sonido"] - pasillo_crudo["sonido"],
+        }
+
         payload = {
             "t": int(t),
             "rol": "aula",
             "aula": aula,
             "pasillo": pasillo,
+            "pasillo_crudo": pasillo_crudo,
             "delta": delta,
+            "delta_crudo": delta_crudo,
+            "calibracion": {
+                "temp": correccion["temp"],
+                "hum": correccion["hum"],
+                "iaq": correccion["iaq"],
+                "activa": True,
+                "calibrando": False,
+            },
             "sensor_ok": True,
             "equipo": {
                 "rol": "aula",

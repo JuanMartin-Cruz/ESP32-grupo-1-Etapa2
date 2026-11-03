@@ -81,15 +81,18 @@ static void empaquetarNodoJson(JsonObject obj, const Lectura& l) {
   }
 }
 
-static void llenarLecturaCompleta(JsonDocument& d, const Lectura& loc, const Lectura& rem, const EstadoControl& s) {
+static void llenarLecturaCompleta(JsonDocument& d, const Lectura& loc, const Lectura& rem,
+                                  const Lectura& remCrudo, const EstadoControl& s) {
   d["t"] = uptimeS();
   d["rol"] = "interior";
 
   JsonObject objInterior = d["aula"].to<JsonObject>();
   JsonObject objExterior = d["pasillo"].to<JsonObject>();
+  JsonObject objExteriorCrudo = d["pasillo_crudo"].to<JsonObject>();
 
   empaquetarNodoJson(objInterior, loc);
   empaquetarNodoJson(objExterior, rem);
+  empaquetarNodoJson(objExteriorCrudo, remCrudo);
 
   JsonObject delta = d["delta"].to<JsonObject>();
   if (rem.conectado) {
@@ -104,6 +107,22 @@ static void llenarLecturaCompleta(JsonDocument& d, const Lectura& loc, const Lec
     delta["hum"] = (char*)nullptr;
     delta["ldr"] = (char*)nullptr;
     delta["sonido"] = (char*)nullptr;
+  }
+
+  // Diferencia calculada con los valores SIN corregir: permite auditar la calibración.
+  JsonObject deltaCrudo = d["delta_crudo"].to<JsonObject>();
+  if (remCrudo.conectado) {
+    deltaCrudo["iaq"] = loc.iaq - remCrudo.iaq;
+    deltaCrudo["temp"] = loc.temp - remCrudo.temp;
+    deltaCrudo["hum"] = loc.hum - remCrudo.hum;
+    deltaCrudo["ldr"] = loc.ldr - remCrudo.ldr;
+    deltaCrudo["sonido"] = loc.sonido - remCrudo.sonido;
+  } else {
+    deltaCrudo["iaq"] = (char*)nullptr;
+    deltaCrudo["temp"] = (char*)nullptr;
+    deltaCrudo["hum"] = (char*)nullptr;
+    deltaCrudo["ldr"] = (char*)nullptr;
+    deltaCrudo["sonido"] = (char*)nullptr;
   }
 
   d["sensor_ok"] = sensorOk();
@@ -182,11 +201,12 @@ static void rutas() {
     storageBloquear();
     Lectura loc = lecturaLocal;
     Lectura rem = lecturaRemota;
+    Lectura remCrudo = lecturaRemotaCruda;
     EstadoControl s = ultimoEstado;
     bool hay = hayLecturaLocal;
     storageDesbloquear();
 
-    if (hay) llenarLecturaCompleta(d, loc, rem, s);
+    if (hay) llenarLecturaCompleta(d, loc, rem, remCrudo, s);
     d["sensor_ok"] = sensorOk();
 
     JsonObject eq = d["equipo"].to<JsonObject>();
@@ -304,13 +324,14 @@ static void rutas() {
       storageBloquear();
       Lectura loc = lecturaLocal;
       Lectura rem = lecturaRemota;
+      Lectura remCrudo = lecturaRemotaCruda;
       EstadoControl st = ultimoEstado;
       bool hay = hayLecturaLocal;
       storageDesbloquear();
       if (hay) {
         JsonDocument d;
-        llenarLecturaCompleta(d, loc, rem, st);
-        char buf[1024];
+        llenarLecturaCompleta(d, loc, rem, remCrudo, st);
+        char buf[1400];
         serializeJson(d, buf, sizeof buf);
         c->text(buf);
       }
@@ -402,16 +423,18 @@ void webActualizar() {
 }
 
 void webPublicar(const Lectura& local, const Lectura& remoto, const EstadoControl& s) {
+  Lectura remCrudo;
   storageBloquear();
   lecturaLocal = local;
   ultimoEstado = s;
   hayLecturaLocal = true;
+  remCrudo = lecturaRemotaCruda;
   storageDesbloquear();
 
   if (ws.count() == 0) return;
   JsonDocument d;
-  llenarLecturaCompleta(d, local, remoto, s);
-  char buf[1024];
+  llenarLecturaCompleta(d, local, remoto, remCrudo, s);
+  char buf[1400];
   serializeJson(d, buf, sizeof buf);
   ws.textAll(buf);
 }
