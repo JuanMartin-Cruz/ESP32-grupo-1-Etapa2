@@ -3,8 +3,8 @@
 
 // Puede conectarse a la red Wi-Fi de tu casa/facultad, o directo a la red del
 // Nodo Interior:
-// #define WIFI_SSID "Fibertel WiFi756 2.4Ghz"
-// #define WIFI_PASS "ladichaesmuchaenladucha"
+// #define WIFI_SSID "nombre-de-tu-red"
+// #define WIFI_PASS "clave-de-tu-red"
 
 // Si se conecta directamente al Punto de Acceso generado por Confort_Interior:
 #define WIFI_SSID "Confort_Interior"

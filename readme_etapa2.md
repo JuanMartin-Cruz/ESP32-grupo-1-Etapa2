@@ -85,6 +85,17 @@ flowchart LR
 | **Confort Lumínico** | Módulo LDR (fotorresistencia) | Módulo LDR (fotorresistencia) | % Luz (0–100) | Nivel visual adecuado para trabajo/estudio vs. exterior. |
 | **Confort Acústico** | Módulo KY-037 (salida DO) | Módulo KY-037 (salida DO) | % Ruido (0–100) | Detección de bullicio e impacto sonoro en tiempo real. |
 
+#### Cómo se calcula el IAQ en cada nodo
+
+Ninguno de los dos nodos usa un índice normalizado de terceros: cada uno deriva su propio IAQ desde la resistencia del sensor de gas.
+
+| Nodo | Sensor | Cálculo (`sensor.cpp`) | Escala |
+| :--- | :--- | :--- | :---: |
+| Interior | BME680 (MOX) | `calcularIaq(gasOhm, humPct)`: base adaptativa por media exponencial (`gasBase`) + penalización por humedad | 10–500 |
+| Exterior | MQ-135 (SnO₂) | `leerMq135()`: relación contra referencia fija, `25 + (ratio − 1) × 110` | 25–500 |
+
+> **Nota metodológica:** ambos IAQ son heurísticas propias calculadas sobre sensores distintos, por lo que son válidos para seguir tendencias dentro de cada nodo, no para comparar valores absolutos entre interior y exterior. Las magnitudes directamente comparables son temperatura, humedad, luz y ruido.
+
 ---
 
 ### Desafío de Ingeniería: Muestreo del Sensor Digital de Sonido (KY-037)
@@ -140,14 +151,29 @@ El sensor KY-037 utilizado toma su lectura desde el pin **DO (salida digital del
   * El Nodo Exterior se asocia inmediatamente a dicho AP (o a una red Wi-Fi compartida configurada en `secrets.h`) y despacha un payload JSON cada 1 segundo:
     ```json
     {
+      "iaq": 42.5,
       "temp": 21.5,
       "hum": 52.0,
       "gas": 45.2,
       "ldr": 58.0,
-      "sonido": 12.0
+      "sonido": 12.0,
+      "pulsos": 37,
+      "acc": 2,
+      "conectado": true
     }
     ```
-  * Endpoint receptor: `POST http://192.168.4.1/api/nodo_remoto`
+  * Endpoint receptor: `POST http://192.168.4.1/api/nodo_remoto`, que responde `{"ok":true}`.
+  * **Timeout de enlace:** si el Interior pasa **15 s** (`REMOTO_TIMEOUT_MS` en `config.h`) sin recibir un POST, marca el nodo exterior como desconectado. El dashboard conserva las métricas internas y señala la ausencia de datos externos.
+* **Endpoints del Nodo Interior:**
+
+| Método | Ruta | Descripción |
+| :--- | :--- | :--- |
+| `GET` | `/` | Dashboard web |
+| `GET` | `/api/current` | Lectura consolidada (interior + último payload remoto) |
+| `GET` | `/api/history?range=<rango>` | Buffer circular de telemetría |
+| `GET` | `/api/export.csv` | Exportación de telemetría a CSV |
+| `POST` | `/api/nodo_remoto` | Recepción del payload del Nodo Exterior |
+| `WS` | `/ws` | Actualización en tiempo real del dashboard |
 
 ---
 
@@ -156,14 +182,22 @@ El sensor KY-037 utilizado toma su lectura desde el pin **DO (salida digital del
 #### Paso 1: Configurar credenciales (Opcional)
 Tanto `firmware/Confort_Interior/secrets.example.h` como `firmware/Confort_Exterior/secrets.example.h` pueden copiarse a `secrets.h` para configurar el SSID y contraseña de una red Wi-Fi externa. De no hacerlo, el sistema opera de forma totalmente autónoma mediante el AP `Confort_Interior`.
 
+> ⚠️ Los archivos `secrets.h` están cubiertos por `.gitignore` (`firmware/**/secrets.h`) y **no deben commitearse nunca**. Los `.example.h` deben contener únicamente valores de ejemplo.
+
 #### Paso 2: Flashear el Nodo Interior
 1. Abrir Arduino IDE.
 2. Abrir el archivo `firmware/Confort_Interior/Confort_Interior.ino`.
 3. Seleccionar la placa **ESP32 Dev Module** (o su modelo de ESP32).
-4. Instalar desde el Gestor de Bibliotecas:
-   * `Adafruit BME680 Library` (junto con `Adafruit Unified Sensor`).
-   * `ESPAsyncWebServer` y `AsyncTCP`.
-   * `ArduinoJson` (versión 6 o 7).
+4. Instalar desde el Gestor de Bibliotecas (versiones verificadas contra el build actual):
+
+   | Biblioteca | Versión | Autor / Nota |
+   | :--- | :--- | :--- |
+   | `Adafruit BME680 Library` | última | Instalar junto con **`Adafruit Unified Sensor`** (dependencia obligatoria) |
+   | `ESP Async WebServer` | 3.12.1 | **ESP32Async** — no confundir con otras librerías del mismo nombre |
+   | `Async TCP` | 3.5.0 | **ESP32Async** |
+   | `ArduinoJson` | 7.4.3 | Benoit Blanchon |
+
+   > El Nodo Interior usa la librería **Adafruit BME680** (lectura directa del sensor), *no* BSEC2. El Nodo Exterior no requiere ninguna de estas librerías: su driver DHT22 está embebido en el proyecto.
 5. Conectar el ESP32 del interior mediante USB y hacer clic en **Subir**.
 
 #### Paso 3: Flashear el Nodo Exterior
