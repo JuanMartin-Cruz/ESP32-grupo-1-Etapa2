@@ -1,4 +1,4 @@
-// dht11.cpp — Lector digital a microsegundos para sensor DHT11
+// dht11.cpp — Lector de pulsos digitales a microsegundos para sensor DHT11
 #include "dht11.h"
 
 void DHT11::begin() {
@@ -66,25 +66,24 @@ bool DHT11::leer(float& temperatura, float& humedad) {
     return false;
   }
 
-  // 5. Conversión de magnitudes específica para DHT11:
-  // Byte 0: Humedad entera, Byte 1: Humedad decimal
-  // Byte 2: Temp entera, Byte 3: Temp decimal
-  float h = (float)datos[0] + (float)datos[1] * 0.1f;
-  float t = (float)datos[2] + (float)(datos[3] & 0x7F) * 0.1f;
-  if (datos[3] & 0x80) t = -t;
+  // 5. Conversión de magnitudes: el DHT11 estándar envía enteros de 8 bits.
+  //    Si el byte decimal es menor a 10 se suma, sino se usa solo el entero (para tolerar clones).
+  float h = (float)datos[0];
+  if (datos[1] > 0 && datos[1] < 10) h += (float)datos[1] * 0.1f;
 
-  // Validación de rango típico de DHT11 (0 a 50 °C, 20 a 95 % HR)
-  if (h >= 5.0f && h <= 100.0f && t >= -10.0f && t <= 60.0f) {
-    _ultimaTemp = t;
-    _ultimaHum = h;
-    _ultimoExito = ahora;
-    temperatura = t;
-    humedad = h;
-    return true;
+  float t = (float)datos[2];
+  if (datos[3] > 0 && datos[3] < 10) t += (float)datos[3] * 0.1f;
+
+  if (h < 0.0f || h > 100.0f || t < -10.0f || t > 60.0f) {
+    temperatura = _ultimaTemp;
+    humedad = _ultimaHum;
+    return false;
   }
 
-  temperatura = _ultimaTemp;
-  humedad = _ultimaHum;
-  return false;
+  _ultimaTemp = t;
+  _ultimaHum = h;
+  _ultimoExito = ahora;
+  temperatura = t;
+  humedad = h;
+  return true;
 }
-

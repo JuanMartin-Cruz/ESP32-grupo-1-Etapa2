@@ -5,9 +5,11 @@
 #include <ESPAsyncWebServer.h>
 #include <AsyncJson.h>
 #include <ArduinoJson.h>
+#include <Preferences.h>
 #include "config.h"
 #include "web.h"
 #include "storage.h"
+#include "calibracion.h"
 #include "web_assets.h"
 
 #if __has_include("secrets.h")
@@ -39,10 +41,34 @@ static AsyncWebServer server(80);
 static AsyncWebSocket ws("/ws");
 
 static Lectura lecturaLocal;
-static Lectura lecturaRemota;
+static Lectura lecturaRemota;       // ya corregida: es la que se muestra y compara
+static Lectura lecturaRemotaCruda;  // sin corregir: se usa para calibrar
 static uint32_t ultimoRemotoMs = 0;
 static EstadoControl ultimoEstado;
 static bool hayLecturaLocal = false;
+
+static Correccion correccion;
+static AcumuladorCalibracion acumulador;
+static bool calibrando = false;
+static Preferences prefsCal;
+
+static void calCargar() {
+  prefsCal.begin("calib", true);
+  Correccion c;
+  c.temp = prefsCal.getFloat("temp", 0.0f);
+  c.hum = prefsCal.getFloat("hum", 0.0f);
+  c.iaq = prefsCal.getFloat("iaq", 0.0f);
+  prefsCal.end();
+  correccion = c;
+}
+
+static void calGuardar() {
+  prefsCal.begin("calib", false);
+  prefsCal.putFloat("temp", correccion.temp);
+  prefsCal.putFloat("hum", correccion.hum);
+  prefsCal.putFloat("iaq", correccion.iaq);
+  prefsCal.end();
+}
 
 static const char* nombreModo() {
   return modo == ModoWifi::STA ? "STA" : modo == ModoWifi::AP ? "AP" : "conectando";
@@ -71,15 +97,18 @@ static void empaquetarNodoJson(JsonObject obj, const Lectura& l) {
   }
 }
 
-static void llenarLecturaCompleta(JsonDocument& d, const Lectura& loc, const Lectura& rem, const EstadoControl& s) {
+static void llenarLecturaCompleta(JsonDocument& d, const Lectura& loc, const Lectura& rem,
+                                  const Lectura& remCrudo, const EstadoControl& s) {
   d["t"] = uptimeS();
   d["rol"] = "interior";
 
   JsonObject objInterior = d["aula"].to<JsonObject>();
   JsonObject objExterior = d["pasillo"].to<JsonObject>();
+  JsonObject objExteriorCrudo = d["pasillo_crudo"].to<JsonObject>();
 
   empaquetarNodoJson(objInterior, loc);
   empaquetarNodoJson(objExterior, rem);
+  empaquetarNodoJson(objExteriorCrudo, remCrudo);
 
   JsonObject delta = d["delta"].to<JsonObject>();
   if (rem.conectado) {
@@ -96,7 +125,30 @@ static void llenarLecturaCompleta(JsonDocument& d, const Lectura& loc, const Lec
     delta["sonido"] = (char*)nullptr;
   }
 
+  // Diferencia calculada con los valores SIN corregir: permite auditar la calibración.
+  JsonObject deltaCrudo = d["delta_crudo"].to<JsonObject>();
+  if (remCrudo.conectado) {
+    deltaCrudo["iaq"] = loc.iaq - remCrudo.iaq;
+    deltaCrudo["temp"] = loc.temp - remCrudo.temp;
+    deltaCrudo["hum"] = loc.hum - remCrudo.hum;
+    deltaCrudo["ldr"] = loc.ldr - remCrudo.ldr;
+    deltaCrudo["sonido"] = loc.sonido - remCrudo.sonido;
+  } else {
+    deltaCrudo["iaq"] = (char*)nullptr;
+    deltaCrudo["temp"] = (char*)nullptr;
+    deltaCrudo["hum"] = (char*)nullptr;
+    deltaCrudo["ldr"] = (char*)nullptr;
+    deltaCrudo["sonido"] = (char*)nullptr;
+  }
+
   d["sensor_ok"] = sensorOk();
+
+  JsonObject cal = d["calibracion"].to<JsonObject>();
+  cal["temp"] = correccion.temp;
+  cal["hum"] = correccion.hum;
+  cal["iaq"] = correccion.iaq;
+  cal["activa"] = correccion.activa();
+  cal["calibrando"] = calibrando;
 }
 
 // ---------- CSV en streaming ----------
@@ -165,11 +217,12 @@ static void rutas() {
     storageBloquear();
     Lectura loc = lecturaLocal;
     Lectura rem = lecturaRemota;
+    Lectura remCrudo = lecturaRemotaCruda;
     EstadoControl s = ultimoEstado;
     bool hay = hayLecturaLocal;
     storageDesbloquear();
 
-    if (hay) llenarLecturaCompleta(d, loc, rem, s);
+    if (hay) llenarLecturaCompleta(d, loc, rem, remCrudo, s);
     d["sensor_ok"] = sensorOk();
 
     JsonObject eq = d["equipo"].to<JsonObject>();
@@ -197,22 +250,88 @@ static void rutas() {
 
   // Recepción de datos del Nodo Exterior
   auto* postRemoto = new AsyncCallbackJsonWebHandler("/api/nodo_remoto", [](AsyncWebServerRequest* r, JsonVariant& j) {
+    Lectura cruda;
+    cruda.iaq = j["iaq"].as<float>();
+    cruda.temp = j["temp"].as<float>();
+    cruda.hum = j["hum"].as<float>();
+    cruda.gas = j["gas"].as<float>();
+    cruda.ldr = j["ldr"].as<float>();
+    cruda.sonido = j["sonido"].as<float>();
+    cruda.pulsosSonido = j["pulsos"].as<uint32_t>();
+    cruda.precision = j["acc"].as<uint8_t>();
+    cruda.conectado = true;
+
+    // Calibración cruzada: se muestrea con los valores SIN corregir.
+    if (calibrando && hayLecturaLocal) {
+      storageBloquear();
+      Lectura local = lecturaLocal;
+      storageDesbloquear();
+      acumulador.muestrear(local, cruda);
+    }
+
     storageBloquear();
-    lecturaRemota.iaq = j["iaq"].as<float>();
-    lecturaRemota.temp = j["temp"].as<float>();
-    lecturaRemota.hum = j["hum"].as<float>();
-    lecturaRemota.gas = j["gas"].as<float>();
-    lecturaRemota.ldr = j["ldr"].as<float>();
-    lecturaRemota.sonido = j["sonido"].as<float>();
-    lecturaRemota.pulsosSonido = j["pulsos"].as<uint32_t>();
-    lecturaRemota.precision = j["acc"].as<uint8_t>();
-    lecturaRemota.conectado = true;
+    lecturaRemotaCruda = cruda;
+    lecturaRemota = correccionAplicar(cruda, correccion);
     ultimoRemotoMs = millis();
     storageDesbloquear();
     r->send(200, "application/json", "{\"ok\":true}");
   });
   postRemoto->setMethod(HTTP_POST);
   server.addHandler(postRemoto);
+
+  // ---------- Calibración cruzada ----------
+  server.on("/api/calibracion", HTTP_GET, [](AsyncWebServerRequest* r) {
+    JsonDocument d;
+    d["temp"] = correccion.temp;
+    d["hum"] = correccion.hum;
+    d["iaq"] = correccion.iaq;
+    d["activa"] = correccion.activa();
+    d["calibrando"] = calibrando;
+    d["muestras"] = calibrando ? acumulador.n : 0;
+    d["objetivo"] = AcumuladorCalibracion::OBJETIVO;
+    d["progreso"] = calibrando ? acumulador.progresoPct() : 0;
+    String out;
+    serializeJson(d, out);
+    r->send(200, "application/json", out);
+  });
+
+  server.on("/api/calibracion/iniciar", HTTP_POST, [](AsyncWebServerRequest* r) {
+    acumulador.reiniciar();
+    calibrando = true;
+    Serial.println(F("# Calibracion iniciada: mantene los dos nodos en el mismo ambiente"));
+    r->send(200, "application/json", "{\"ok\":true}");
+  });
+
+  server.on("/api/calibracion/aplicar", HTTP_POST, [](AsyncWebServerRequest* r) {
+    if (!calibrando || acumulador.n == 0) {
+      r->send(409, "application/json", "{\"ok\":false,\"error\":\"sin muestras\"}");
+      return;
+    }
+    correccion = acumulador.resultado();
+    calibrando = false;
+    acumulador.reiniciar();
+    calGuardar();
+
+    Serial.printf("# Calibracion aplicada: dT=%.2f C dHum=%.2f %% dIAQ=%.2f\n",
+                  correccion.temp, correccion.hum, correccion.iaq);
+    JsonDocument d;
+    d["ok"] = true;
+    d["temp"] = correccion.temp;
+    d["hum"] = correccion.hum;
+    d["iaq"] = correccion.iaq;
+    String out;
+    serializeJson(d, out);
+    r->send(200, "application/json", out);
+  });
+
+  server.on("/api/calibracion/reset", HTTP_POST, [](AsyncWebServerRequest* r) {
+    correccion = Correccion();
+    calibrando = false;
+    acumulador.reiniciar();
+    calGuardar();
+    Serial.println(F("# Calibracion borrada"));
+    r->send(200, "application/json", "{\"ok\":true}");
+  });
 
   server.onNotFound([](AsyncWebServerRequest* r) { r->send(404, "text/plain", "No encontrado"); });
 
@@ -221,13 +340,14 @@ static void rutas() {
       storageBloquear();
       Lectura loc = lecturaLocal;
       Lectura rem = lecturaRemota;
+      Lectura remCrudo = lecturaRemotaCruda;
       EstadoControl st = ultimoEstado;
       bool hay = hayLecturaLocal;
       storageDesbloquear();
       if (hay) {
         JsonDocument d;
-        llenarLecturaCompleta(d, loc, rem, st);
-        char buf[768];
+        llenarLecturaCompleta(d, loc, rem, remCrudo, st);
+        char buf[1400];
         serializeJson(d, buf, sizeof buf);
         c->text(buf);
       }
@@ -254,6 +374,8 @@ static void iniciarServicios() {
 }
 
 void webIniciar() {
+  calCargar();
+
   if (strlen(WIFI_SSID) == 0 || strcmp(WIFI_SSID, "nombre-de-tu-red") == 0) {
     Serial.println(F("# Sin red Wi-Fi configurada: Iniciando Punto de Acceso propio..."));
     WiFi.mode(WIFI_AP);
@@ -317,16 +439,18 @@ void webActualizar() {
 }
 
 void webPublicar(const Lectura& local, const Lectura& remoto, const EstadoControl& s) {
+  Lectura remCrudo;
   storageBloquear();
   lecturaLocal = local;
   ultimoEstado = s;
   hayLecturaLocal = true;
+  remCrudo = lecturaRemotaCruda;
   storageDesbloquear();
 
   if (ws.count() == 0) return;
   JsonDocument d;
-  llenarLecturaCompleta(d, local, remoto, s);
-  char buf[768];
+  llenarLecturaCompleta(d, local, remoto, remCrudo, s);
+  char buf[1400];
   serializeJson(d, buf, sizeof buf);
   ws.textAll(buf);
 }

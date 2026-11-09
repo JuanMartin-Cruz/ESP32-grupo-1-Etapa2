@@ -61,6 +61,7 @@ const estado = {
   },
   instanciasGraficos: {},
   ultimaLectura: null,
+  sinCalibrar: false,
 };
 
 // ---------- Utilidades ----------
@@ -200,8 +201,22 @@ function renderizarDatos(d) {
   const ahoraEpoch = d.t ? (estado.desfase + d.t) : (Date.now() / 1000);
 
   const aula = d.aula || {};
-  const pasillo = d.pasillo || {};
-  const delta = d.delta || {};
+  const sinCal = estado.sinCalibrar === true;
+  const pasillo = sinCal ? (d.pasillo_crudo || {}) : (d.pasillo || {});
+  const delta = sinCal ? (d.delta_crudo || {}) : (d.delta || {});
+  const cal = d.calibracion || {};
+
+  // Info de calibración vigente
+  const infoCal = $("#info-calibracion");
+  if (infoCal) {
+    if (cal.calibrando) {
+      infoCal.textContent = `Calibración en curso — ${cal.progreso || 0} % (${cal.muestras || 0}/${cal.objetivo || 30} muestras)`;
+    } else if (cal.activa) {
+      infoCal.textContent = `Calibración activa — ΔT ${fmtDelta(cal.temp, " °C")} · ΔHum ${fmtDelta(cal.hum, " %")} · ΔIAQ ${fmtDelta(cal.iaq, " pts")}`;
+    } else {
+      infoCal.textContent = "Sin calibración aplicada: se muestran valores crudos de ambos nodos.";
+    }
+  }
 
   // 1. Estados de Nodos en el Header
   const badgeAula = $("#estado-aula");
@@ -215,7 +230,9 @@ function renderizarDatos(d) {
   const pasilloOk = pasillo.conectado === true;
   badgePasillo.classList.toggle("online", pasilloOk);
   badgePasillo.classList.toggle("offline", !pasilloOk);
-  $("#pasillo-estado").textContent = pasilloOk ? "Conectado (En línea)" : "Sin señal (Solo Interior)";
+  $("#pasillo-estado").textContent = pasilloOk
+    ? (sinCal ? "Conectado (sin calibrar)" : "Conectado (En línea)")
+    : "Sin señal (Solo Interior)";
 
   // 2. Evaluación de Confort y Tarjetas
   const evalC = evaluarConfort(aula);
@@ -480,6 +497,14 @@ window.addEventListener("DOMContentLoaded", async () => {
   configurarPestañas();
   configurarRangos();
   inicializarTema();
+
+  const chkCrudo = $("#ver-crudo");
+  if (chkCrudo) {
+    chkCrudo.addEventListener("change", () => {
+      estado.sinCalibrar = chkCrudo.checked;
+      if (estado.ultimaLectura) renderizarDatos(estado.ultimaLectura);
+    });
+  }
 
   await cargarVivoInicial();
 

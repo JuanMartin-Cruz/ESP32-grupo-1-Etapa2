@@ -1,11 +1,13 @@
 // Tests nativos (en PC, sin ESP32) de la lógica pura del firmware (Etapa 2 - Confort).
 // Compilar y correr en entornos con GCC/Clang:
 //   g++ -std=c++17 -Wall -Wextra -I firmware/Confort_Interior tools/test_nativo.cpp \
-//       firmware/Confort_Interior/control.cpp firmware/Confort_Interior/muestras.cpp -o build/test_nativo && ./build/test_nativo
+//       firmware/Confort_Interior/control.cpp firmware/Confort_Interior/muestras.cpp \
+//       firmware/Confort_Interior/calibracion.cpp -o build/test_nativo && ./build/test_nativo
 #include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include "calibracion.h"
 #include "control.h"
 #include "muestras.h"
 
@@ -126,6 +128,94 @@ static void testPromedio() {
   assert(p.vacio());
 }
 
+static void testCorreccion() {
+  Lectura rem;
+  rem.temp = 29.0f;
+  rem.hum = 56.0f;
+  rem.iaq = 300.0f;
+  rem.conectado = true;
+
+  Correccion c;
+  c.temp = -3.0f;
+  c.hum = 6.0f;
+  c.iaq = -5.0f;
+
+  Lectura r = correccionAplicar(rem, c);
+  assert(cerca(r.temp, 26.0f, 1e-3));
+  assert(cerca(r.hum, 62.0f, 1e-3));
+  assert(cerca(r.iaq, 295.0f, 1e-3));
+  assert(c.activa());
+
+  // Recorte a rangos fisicos
+  Correccion extrema;
+  extrema.temp = -100.0f;
+  extrema.hum = 100.0f;
+  extrema.iaq = -1000.0f;
+  Lectura r2 = correccionAplicar(rem, extrema);
+  assert(cerca(r2.temp, -40.0f, 1e-3));
+  assert(cerca(r2.hum, 100.0f, 1e-3));
+  assert(cerca(r2.iaq, 0.0f, 1e-3));
+
+  // Sin conexion no se modifica nada
+  Lectura off;
+  off.conectado = false;
+  off.temp = 29.0f;
+  Lectura r3 = correccionAplicar(off, c);
+  assert(cerca(r3.temp, 29.0f, 1e-3));
+
+  // Correccion neutra no cambia valores
+  assert(!Correccion().activa());
+}
+
+static void testAcumuladorCalibracion() {
+  AcumuladorCalibracion a;
+  assert(!a.completo());
+  assert(a.progresoPct() == 0);
+
+  Lectura local;
+  local.temp = 26.0f;
+  local.hum = 62.0f;
+  local.iaq = 120.0f;
+
+  Lectura rem;
+  rem.temp = 29.0f;
+  rem.hum = 56.0f;
+  rem.iaq = 150.0f;
+  rem.conectado = true;
+
+  a.muestrear(local, rem);
+  a.muestrear(local, rem);
+
+  Correccion c = a.resultado();
+  assert(cerca(c.temp, -3.0f, 1e-3));
+  assert(cerca(c.hum, 6.0f, 1e-3));
+  assert(cerca(c.iaq, -30.0f, 1e-3));
+
+  // Lectura fuera de rango fisico: se descarta
+  Lectura mala;
+  mala.conectado = true;
+  mala.temp = 999.0f;
+  mala.hum = 50.0f;
+  mala.iaq = 100.0f;
+  a.muestrear(local, mala);
+  assert(a.n == 2);
+
+  // Nodo remoto desconectado: se descarta
+  Lectura off;
+  off.conectado = false;
+  a.muestrear(local, off);
+  assert(a.n == 2);
+
+  for (int i = 0; i < (int)AcumuladorCalibracion::OBJETIVO; i++) a.muestrear(local, rem);
+  assert(a.completo());
+  assert(a.progresoPct() == 100);
+
+  a.reiniciar();
+  assert(!a.completo() && a.n == 0);
+  Correccion cero = a.resultado();
+  assert(cero.temp == 0.0f && cero.hum == 0.0f && cero.iaq == 0.0f);
+}
+
 int main() {
   testBandas();
   testDeltasConfort();
@@ -135,6 +225,8 @@ int main() {
   testAnillo();
   testEmpaquetarYCsv();
   testPromedio();
+  testCorreccion();
+  testAcumuladorCalibracion();
   puts("OK: Todos los tests nativos de Confort (Etapa 2) pasaron exitosamente!");
   return 0;
 }

@@ -8,6 +8,7 @@ static DHT11 dht(PIN_DHT);
 static volatile uint32_t pulsosSubVentana = 0;
 static uint32_t ultimoMuestreoSonido = 0;
 static uint32_t ultimoMuestreoCompleto = 0;
+static uint32_t avisoDhtMs = 0;
 static LecturaExterior ultima;
 
 static void IRAM_ATTR isrSonido() {
@@ -105,6 +106,21 @@ bool sensorActualizar(LecturaExterior& out) {
   if (dht.leer(t, h)) {
     ultima.temp = t;
     ultima.hum = h;
+
+    static bool modeloInformado = false;
+    if (!modeloInformado) {
+      modeloInformado = true;
+      Serial.println(F("# DHT11 activo: resolucion 1 C / 1 % HR"));
+    }
+    avisoDhtMs = 0;
+  } else {
+    // Aviso periodico: antes el fallo era silencioso y el valor quedaba
+    // congelado en el default sin ninguna pista en el monitor serie.
+    if (avisoDhtMs == 0) avisoDhtMs = ahora;
+    if (ahora - avisoDhtMs >= 10000) {
+      avisoDhtMs = ahora;
+      Serial.println(F("# DHT: lectura invalida (sin respuesta o checksum). Se mantiene el ultimo valor."));
+    }
   }
 
   ultima.conectado = true;

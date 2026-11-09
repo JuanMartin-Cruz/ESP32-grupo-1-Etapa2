@@ -22,7 +22,7 @@
       <span>Interior: <strong id="aula-ip">Conectando…</strong></span>
       <small id="aula-acc" style="color:var(--tinta-2)"></small>
     </div>
-    <div class="badge-nodo offline" id="estado-pasillo" title="Nodo Exterior (DHT22 + MQ-135 + LDR + KY-037)">
+    <div class="badge-nodo offline" id="estado-pasillo" title="Nodo Exterior (DHT11 + MQ-135 + LDR + KY-037)">
       <span class="dot"></span>
       <span>Exterior: <strong id="pasillo-estado">Esperando datos…</strong></span>
     </div>
@@ -32,6 +32,8 @@
 <p class="aviso-conexion" id="aviso-conexion" role="status" hidden>
   Sin conexión con el nodo central. Reintentando reconectar…
 </p>
+
+<p class="info-calibracion" id="info-calibracion"></p>
 
 <main>
   <!-- 1. RESUMEN DE LAS 5 VARIABLES DE CONFORT -->
@@ -163,6 +165,10 @@
   <!-- 2. SECCIÓN DE LAS 5 GRÁFICAS COMPARATIVAS -->
   <section class="graficas-seccion">
     <div class="barra-controles">
+      <label class="toggle-crudo" title="Muestra las lecturas del Exterior sin la corrección de calibración">
+        <input type="checkbox" id="ver-crudo">
+        Ver sin calibrar
+      </label>
       <div class="leyenda-graficas">
         <span><span class="muestra-traza aula"></span> Nodo Interior</span>
         <span><span class="muestra-traza pasillo"></span> Nodo Exterior</span>

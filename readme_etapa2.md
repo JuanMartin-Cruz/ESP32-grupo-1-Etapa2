@@ -80,8 +80,8 @@ flowchart LR
 | Magnitud | Sensor Nodo Interior | Sensor Nodo Exterior | Unidad / Rango | Relevancia de Confort |
 | :--- | :--- | :--- | :---: | :--- |
 | **Calidad de Aire / Gases** | Bosch BME680 (Gas MOX) | Hanwei MQ-135 (Gas SnO₂) | 0–500 IAQ / kΩ | Ventilación, presencia de COV y pureza respirable. |
-| **Confort Térmico** | Bosch BME680 | DHT11 | °C | Sensación térmica, balance y gradiente $\Delta T$. |
-| **Confort Higrométrico** | Bosch BME680 | DHT11 | % HR (0–100) | Humedad relativa óptima de permanencia (35–60 %). |
+| **Confort Térmico** | Bosch BME680 | Aosong DHT11 | °C | Sensación térmica, balance y gradiente $\Delta T$. |
+| **Confort Higrométrico** | Bosch BME680 | Aosong DHT11 | % HR (0–100) | Humedad relativa óptima de permanencia (35–60 %). |
 | **Confort Lumínico** | Módulo LDR (fotorresistencia) | Módulo LDR (fotorresistencia) | % Luz (0–100) | Nivel visual adecuado para trabajo/estudio vs. exterior. |
 | **Confort Acústico** | Módulo KY-037 (salida DO) | Módulo KY-037 (salida DO) | % Ruido (0–100) | Detección de bullicio e impacto sonoro en tiempo real. |
 
@@ -95,6 +95,38 @@ Ninguno de los dos nodos usa un índice normalizado de terceros: cada uno deriva
 | Exterior | MQ-135 (SnO₂) | `leerMq135()`: relación contra referencia fija, `25 + (ratio − 1) × 110` | 25–500 |
 
 > **Nota metodológica:** ambos IAQ son heurísticas propias calculadas sobre sensores distintos, por lo que son válidos para seguir tendencias dentro de cada nodo, no para comparar valores absolutos entre interior y exterior. Las magnitudes directamente comparables son temperatura, humedad, luz y ruido.
+
+> **Resolución de los sensores:** el **DHT11** entrega 1 °C y 1 % HR, mientras que el **BME680** del nodo interior resuelve 0.01 °C y 0.1 % HR. Las diferencias menores a una unidad están por debajo del poder de resolución del nodo exterior y no deben interpretarse como diferencias reales de temperatura o humedad.
+
+#### Calibración cruzada de sensores
+
+Como los dos nodos usan sensores distintos, sus lecturas no son comparables sin corregir: el DHT11 puede marcar 29 °C donde el BME680 mide 26 °C. El sistema corrige esa diferencia con una **calibración cruzada**, que se realiza con ambos nodos midiendo el mismo ambiente.
+
+**Procedimiento**
+
+1. Colocar los dos nodos juntos, en el mismo ambiente, y dejarlos estabilizar unos 2 minutos.
+2. `POST /api/calibracion/iniciar`
+3. Esperar a que `progreso` llegue a 100 (30 muestras ≈ 30 s con el exterior publicando cada 1 s).
+4. `POST /api/calibracion/aplicar`
+
+La corrección resultante es la media de `(interior − exterior)` sobre las muestras acumuladas, aplicada por separado a temperatura, humedad e IAQ. Queda guardada en la NVS del ESP32 Interior y sobrevive a los reinicios.
+
+| Endpoint | Método | Función |
+| :--- | :--- | :--- |
+| `/api/calibracion` | `GET` | Offsets vigentes, estado y progreso de la captura |
+| `/api/calibracion/iniciar` | `POST` | Arranca la captura (30 muestras) |
+| `/api/calibracion/aplicar` | `POST` | Calcula, aplica y persiste la corrección |
+| `/api/calibracion/reset` | `POST` | Borra la corrección (vuelve a valores crudos) |
+
+La corrección se aplica **en el Nodo Interior**, al recibir el payload del Exterior:
+
+```
+exterior_corregido = exterior_crudo + offset      (recortado a rango físico)
+```
+
+Ventaja de hacerlo ahí: se recalibra sin necesidad de reflashear el ESP32 exterior. El estado vigente también aparece en `/api/current`, dentro del objeto `calibracion`.
+
+> **Alcance de la corrección:** un offset corrige el **sesgo medio** entre dos sensores, no la forma de su curva. Es válido para comparar dentro del entorno y las condiciones donde se calibró. En el caso del IAQ es más delicado, porque el BME680 y el MQ-135 responden a principios químicos distintos (MOX vs SnO₂): el offset acerca los valores en ese punto de operación, pero no vuelve equivalentes a los dos sensores.
 
 ---
 
@@ -197,7 +229,7 @@ Tanto `firmware/Confort_Interior/secrets.example.h` como `firmware/Confort_Exter
    | `Async TCP` | 3.5.0 | **ESP32Async** |
    | `ArduinoJson` | 7.4.3 | Benoit Blanchon |
 
-   > El Nodo Interior usa la librería **Adafruit BME680** (lectura directa del sensor), *no* BSEC2. El Nodo Exterior no requiere ninguna de estas librerías: su driver DHT22 está embebido en el proyecto.
+   > El Nodo Interior usa la librería **Adafruit BME680** (lectura directa del sensor), *no* BSEC2. El Nodo Exterior no requiere ninguna de estas librerías: su driver DHT11 está embebido en el proyecto.
 5. Conectar el ESP32 del interior mediante USB y hacer clic en **Subir**.
 
 #### Paso 3: Flashear el Nodo Exterior

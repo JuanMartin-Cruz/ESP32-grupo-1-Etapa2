@@ -4,7 +4,7 @@
 
 class DHT11 {
  public:
-  explicit DHT11(uint8_t pin) : _pin(pin), _ultimaTemp(22.0f), _ultimaHum(50.0f), _ultimoExito(0) {}
+  explicit DHT11(uint8_t pin) : _pin(pin), _ultimaTemp(20.0f), _ultimaHum(50.0f), _ultimoExito(0) {}
   void begin();
   bool leer(float& temperatura, float& humedad);
 
@@ -14,4 +14,3 @@ class DHT11 {
   float _ultimaHum;
   uint32_t _ultimoExito;
 };
-
