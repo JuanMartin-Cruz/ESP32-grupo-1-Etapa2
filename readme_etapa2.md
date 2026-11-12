@@ -2,13 +2,15 @@
 ## Confort Multi-Nodo (Etapa 2) — Monitoreo Comparativo Ambiental Multi-Escenario
 
 ### Identificación del Proyecto (Etapa 2)
-* **Número de equipo:** 9
+* **Número de equipo:** 1
 * **Integrantes:**
-  * Slootmans, Maria
-  * Nuñez Baccón, Victoria
-  * Valli, Franco Ignacio
+  * Allaud, Santiago
+  * Alvarez, Noemí
+  * Carballo Peré, María Florencia
+  * Cruz, Juan Martin
+  * Ramos, Alexander
 * **Proyecto recibido de Etapa 1:** Aire IoT (Monitor mononodo interior con BME680, LEDs y buzzer).
-* **Nuevo nombre del sistema:** `confort`
+* **Nuevo nombre del sistema (Etapa 2):** Confort Multi-Nodo
 
 ---
 
